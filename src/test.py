@@ -22,21 +22,22 @@ def main():
 
 
 
-    song_name = "SWORD"
-    artist_name = "WISP"
+    song_name = "feel it by david"
+    artist_name = "david"
 
 
     print(f"Searching for '{song_name}' by '{artist_name}'...")
-    results = sp.search(q=f"{song_name} {artist_name}", type="track", limit=1)
+    results = sp.search(q=f"feel it", type="track", limit=5)
 
     if results['tracks']['items']:
-        track = results['tracks']['items'][0]
-        track_uri = track['uri']
+        # track = results['tracks']['items'][0]
+        # track_uri = track['uri']
         
-        print(f"Found: {track['name']} by {track['artists'][0]['name']}")
-        print(f"Playing now.")
+        for track in results['tracks']['items']:
+            print(f"Found: {track['name']} by {track['artists'][0]['name']}")
+            # print(f"Playing now.")
         
-        sp.start_playback(uris=[track_uri])
+        # sp.start_playback(uris=[track_uri])
     else:
         print("Song not found")
 
