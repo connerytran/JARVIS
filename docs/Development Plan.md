@@ -15,15 +15,15 @@ Build a locally-run JARVIS-like voice assistant using an LLM as the brain, capab
 **Goal:** Get external integrations working before building the core system
 
 **What you'll do:**
-- Set up Home Assistant and connect Luvoni lights
-- Set up Spotify Developer account and get OAuth working
-- Test both APIs manually with curl/Postman
-- Document credentials and API endpoints
+- [x] Set up Home Assistant and connect Luvoni lights
+- [x] Set up Spotify Developer account and get OAuth working
+- [x] Test both APIs manually with curl/Postman
+- [x] Document credentials and API endpoints
 
 **Success criteria:**
-- Can control lights via Home Assistant API
-- Can control Spotify playback via API
-- Have all tokens/credentials ready to use
+- [x] Can control lights via Home Assistant API
+- [x] Can control Spotify playback via API
+- [x] Have all tokens/credentials ready to use
 
 ---
 
@@ -32,15 +32,19 @@ Build a locally-run JARVIS-like voice assistant using an LLM as the brain, capab
 **Goal:** Build the brain without audio - prove LLM can control actions
 
 **What you'll do:**
-- Set up project repository with clean architecture
-- Install Ollama and get Llama 3.1 running
-- Build agent that takes TEXT input and executes actions
-- Integrate Home Assistant and Spotify executors
+- [x] Set up project repository with clean architecture
+- [x] Install Ollama and get Qwen 2.5 7B running
+- [x] Create tools directory structure (tools/spotify.py, tools/home_assistant.py)
+- [ ] Build complete Spotify tool functions (play, pause, skip, etc.)
+- [ ] Build complete Home Assistant tool functions (lights control, brightness, etc.)
+- [ ] Build agent orchestrator that handles tool calling loop
+- [ ] Test end-to-end: type command → LLM calls function → action executes
 
 **Success criteria:**
-- Type "turn on lights" → lights turn on
-- Type "play music" → Spotify plays
-- LLM reliably calls correct functions
+- [ ] Type "turn on lights" → lights turn on
+- [ ] Type "play music" → Spotify plays
+- [ ] LLM reliably calls correct functions with correct parameters
+- [ ] System handles errors gracefully (API failures, wrong commands, etc.)
 
 **Example:**
 ```
@@ -57,16 +61,19 @@ System prints: "Turning on the lights"
 **Goal:** Replace typing with voice - system listens and transcribes
 
 **What you'll do:**
-- Set up microphone input
-- Implement openWakeWord ("Hey Jarvis" detection)
-- Implement faster-whisper (speech-to-text)
-- Build audio pipeline: mic → wake word → STT → agent
+- [ ] Set up microphone input handling
+- [ ] Implement openWakeWord ("Hey Jarvis" detection)
+- [ ] Implement faster-whisper (speech-to-text)
+- [ ] Build audio pipeline: mic → wake word → STT → agent
+- [ ] Tune wake word threshold for reliability
+- [ ] Handle audio buffering and recording
 
 **Success criteria:**
-- Say "Hey Jarvis, turn on lights" → lights turn on
-- Wake word detects reliably
-- STT accurately transcribes commands
-- Still printing text responses (no TTS yet)
+- [ ] Say "Hey Jarvis, turn on lights" → lights turn on
+- [ ] Wake word detects reliably (low false positives/negatives)
+- [ ] STT accurately transcribes commands
+- [ ] End-to-end voice → action works
+- [ ] Still printing text responses (no TTS yet)
 
 ---
 
@@ -75,15 +82,18 @@ System prints: "Turning on the lights"
 **Goal:** Complete the loop - system talks back
 
 **What you'll do:**
-- Implement Kokoro TTS
-- Integrate TTS into response flow
-- Handle audio conflicts (pause wake word during speech)
+- [ ] Implement Kokoro TTS
+- [ ] Integrate TTS into agent response flow
+- [ ] Add audio output handling (speakers)
+- [ ] Handle audio state management (pause wake word during TTS)
+- [ ] Optimize response latency
 
 **Success criteria:**
-- Full voice conversation works
-- System responds with clear speech
-- Audio doesn't conflict with wake word detection
-- Total latency is reasonable (<10 seconds)
+- [ ] Full voice conversation works
+- [ ] System responds with clear speech
+- [ ] No audio conflicts (wake word pauses during TTS playback)
+- [ ] Total latency is reasonable (<10 seconds)
+- [ ] Natural conversation flow
 
 ---
 
@@ -92,18 +102,20 @@ System prints: "Turning on the lights"
 **Goal:** Make it robust and demo-ready
 
 **What you'll do:**
-- Add error handling for all failure cases
-- Implement logging for debugging
-- Optimize performance and latency
-- Write documentation (README, setup guide)
-- Test thoroughly and fix bugs
-- Prepare demo scenarios for video
+- [ ] Add comprehensive error handling for all failure cases
+- [ ] Implement logging for debugging
+- [ ] Optimize performance and reduce latency where possible
+- [ ] Write documentation (README, setup guide, architecture docs)
+- [ ] Test thoroughly and fix bugs
+- [ ] Prepare demo scenarios for YouTube video
+- [ ] Create configuration system for easy customization
 
 **Success criteria:**
-- System runs reliably for extended periods
-- Handles errors gracefully
-- Well-documented for others to replicate
-- Ready to record YouTube video
+- [ ] System runs reliably for extended periods
+- [ ] Handles errors gracefully (network failures, API errors, etc.)
+- [ ] Well-documented for others to replicate
+- [ ] Ready to record YouTube video
+- [ ] Clean, maintainable code
 
 ---
 
@@ -112,12 +124,17 @@ System prints: "Turning on the lights"
 **Goal:** Future improvements
 
 **Possible additions:**
-- Upgrade to XTTS v2 for better voice quality
-- Add cloud LLM fallback for complex queries
-- Add more integrations (weather, calendar, etc.)
-- Build mobile app for control
-- Add conversation memory
-- Train custom wake words
+- [ ] Upgrade to XTTS v2 for better voice quality with voice cloning
+- [ ] Add cloud LLM fallback (Claude/GPT-4) for complex queries
+- [ ] Add more integrations (weather, calendar, email, news, etc.)
+- [ ] Build mobile app for control and monitoring
+- [ ] Add conversation memory and context
+- [ ] Train custom wake words
+- [ ] Implement RAG for personal knowledge base
+- [ ] Add auto-start Spotify functionality
+- [ ] Multi-room support with different wake words
+- [ ] Custom routines and macros
+- [ ] Improved music search (fuzzy matching for artist names)
 
 ---
 
@@ -130,7 +147,7 @@ System prints: "Turning on the lights"
 **Software:**
 - Wake Word: openWakeWord
 - STT: faster-whisper
-- LLM: Ollama (Llama 3.1)
+- LLM: Ollama (Qwen 2.5 7B)
 - TTS: Kokoro
 - Home Control: Home Assistant (Tuya)
 - Music: Spotify API
