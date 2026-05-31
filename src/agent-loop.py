@@ -7,8 +7,10 @@ from prompts import load
 
 
 messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-messages.append({'role': 'user', 'content': ' next song.'})
+messages.append({'role': 'user', 'content': ' skip song'})
 
+
+# SHOULD ADD ASYNC FOR FASTER TOOL CALLS, BUT THIS IS FINE FOR NOW
 while True:
     response: ChatResponse = chat(
         model='qwen2.5:7b',
