@@ -29,7 +29,7 @@ def play_song(song_name: str, artist_name: str):
       artist_name: The name of the artist of the song
     """
     try:
-        results = SPOTIFY.search(q=f"track:{song_name} artist:{artist_name}", type="track", limit=1)
+        results = SPOTIFY.search(q=f" {song_name} {artist_name}", type="track", limit=1)
         if not results['tracks']['items']:
             return {"status": "error", "message": f"Could not find '{song_name}' by '{artist_name}' on Spotify."}
 
