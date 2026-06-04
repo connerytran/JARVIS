@@ -10,6 +10,7 @@ Building a locally-run voice assistant system using LLMs as the brain, capable o
 - **Wake Word Detection** ("Hey Jarvis" trigger)
 - **Speech-to-Text** (converts your voice → text)
 - **Audio preprocessing** (noise reduction, voice activity detection)
+- **Silero VAD** (drives the recording loop — stops capture after silence, distinct from faster-whisper's internal `vad_filter`)
 
 ---
 
@@ -39,7 +40,12 @@ Building a locally-run voice assistant system using LLMs as the brain, capable o
 
 ## **5. Orchestration/Glue**
 - **Main application loop** (ties everything together)
-- **State management** (is it listening? processing? responding?)
+- **State management** — explicit states:
+  - `IDLE` — waiting for wake word / hotkey
+  - `LISTENING` — capturing and buffering audio; VAD decides when to stop
+  - `THINKING` — LLM is processing the transcription
+  - `SPEAKING` — TTS is playing back the response
+  - `TOOL_CALLING` — an action is being executed (useful for UI feedback)
 - **Configuration** (settings, API keys, model selection)
 - **Logging/debugging** (crucial for troubleshooting)
 

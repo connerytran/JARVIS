@@ -51,7 +51,7 @@ def play_song(song_name: str, artist_name: str):
         for uri in queue_uris[:20]:
             SPOTIFY.add_to_queue(uri)
 
-        return {"status": "success", "message": f"Playing '{track['name']}' by '{artist_name}'."}
+        return {"status": "success", "message": f"Playing '{track['name']}' by '{track['artists'][0]['name']}'."}
 
     except Exception as e:
         return {"status": "error", "message": f"An error occurred: {str(e)}"}
@@ -69,7 +69,7 @@ def pause_song() -> None:
             SPOTIFY.pause_playback()
             return {
                 "status": "success",
-                "message": f"Paused the {playback['item']['name']} by {playback['item']['artists'][0]['name']} on Spotify."
+                "message": f"Paused the song {playback['item']['name']} by {playback['item']['artists'][0]['name']} on Spotify."
             }
         else:
             return {
@@ -94,7 +94,7 @@ def resume_song() -> None:
             SPOTIFY.start_playback()
             return {
                 "status": "success",
-                "message": "Resumed the currently paused song on Spotify."
+                "message": f"Resumed. Playing {playback['item']['name']} by {playback['item']['artists'][0]['name']}."
             }
         else:
             return {

@@ -21,5 +21,20 @@ def set_volume(volume: int) -> dict:
         return {"status": "success", "message": f"System volume set to {volume}%."}
     except Exception as e:
         return {"status": "error", "message": f"Failed to set system volume: {str(e)}"}
+    
 
-TOOLS = [set_volume]
+
+def get_volume() -> dict:
+    """Get the current system volume on the PC."""
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices._dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        vol = cast(interface, POINTER(IAudioEndpointVolume))
+        current_volume = int(vol.GetMasterVolumeLevelScalar() * 100)
+        return {"status": "success", "volume": current_volume, "message": f"Current system volume is {current_volume}%."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get system volume: {str(e)}"}
+    
+    
+
+TOOLS = [set_volume, get_volume]

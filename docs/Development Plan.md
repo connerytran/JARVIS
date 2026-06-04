@@ -67,6 +67,8 @@ System prints: "Turning on the lights"
 - [ ] Build audio pipeline: mic → wake word → STT → agent
 - [ ] Tune wake word threshold for reliability
 - [ ] Handle audio buffering and recording
+- [ ] Implement silence detection via Silero VAD (replace fixed-duration recording)
+- [ ] Refactor agent-loop.py into explicit state machine (IDLE → LISTENING → THINKING → SPEAKING/TOOL_CALLING)
 
 **Success criteria:**
 - [ ] Say "Hey Jarvis, turn on lights" → lights turn on
