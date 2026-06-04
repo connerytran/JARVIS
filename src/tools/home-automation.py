@@ -41,7 +41,7 @@ def control_light(device_name: str, brightness: int = None, color: str = None, t
 
 
 # We need to set the docstring after because f string cant be used in function definition
-control_light.__doc__ = f"""Sets a light's properties in Home Assistant.
+control_light.__doc__ = f"""Sets a SINGLE light's properties in Home Assistant.
 Args:
     device_name: The name of the light device to control. One of: {', '.join(AVAILABLE_LIGHTS)}. If the user asks for a device that is not in this list, return an error message with the available devices. ONLY CHOOSE OPTIONS FROM THIS LIST.
     brightness: The brightness level (0-255) (assume the user means 0-100 and convert to 0-255. set brightness 0 to turn off the light)

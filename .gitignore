@@ -2,3 +2,4 @@
 .cache
 __pycache__
 _HA-config.yaml
+.venv/

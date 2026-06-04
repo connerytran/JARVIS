@@ -21,19 +21,48 @@ SPOTIFY = spotipy.Spotify(auth_manager=SpotifyOAuth(
 )
 
 
-
-def play_song(song_name: str, artist_name: str):
-    """Play a song on Spotify and queue shuffled songs from the artist after.
+def search_song(song_name: str=None, artist_name: str=None):
+    """ONLY SEARCHES for songs on Spotify. ALWAYS call this before play_song to get a valid URI.
+    After getting results, immediately pick the best matching URI and call play_song — do NOT ask the user to confirm or choose.
+    Best match = closest song name + artist name to what the user requested.
+    BE SURE TO CALL play_song WITH THE URI OF THE SONG YOU WANT TO PLAY AFTER
     Args:
-      song_name: The name of the song to play
+      song_name: The name of the song to search for
       artist_name: The name of the artist of the song
     """
     try:
-        results = SPOTIFY.search(q=f" {song_name} {artist_name}", type="track", limit=1)
+        query = f" {song_name} {artist_name}" if song_name and artist_name else f" {song_name}" if song_name else f" {artist_name}"
+        results = SPOTIFY.search(q=query, type="track", limit=5)
         if not results['tracks']['items']:
-            return {"status": "error", "message": f"Could not find '{song_name}' by '{artist_name}' on Spotify."}
+            return {"status": "error", "message": f"Could not find songs for: '{song_name}' by '{artist_name}' on Spotify."}
+        
+        tracks = results['tracks']['items']
+        search_results = {}
+        for track in tracks:
+            search_results[track['uri']] = {
+                "song_name": track['name'],
+                "artist_name": track['artists'][0]['name'],
+                "album_name": track['album']['name'],
+            }
 
-        track = results['tracks']['items'][0]
+        return {
+            "status": "success",
+            "Search Results": search_results
+        }
+        
+    except Exception as e:
+        return {"status": "error", "message": f"An error occurred: {str(e)}"}
+
+
+
+def play_song(song_uid: str = None) -> dict:
+    """ ALWAYS USE search_song BEFORE THIS TO GET A VALID SONG UID.
+    Play a song on Spotify and queue shuffled songs from the artist after. 
+    Args:
+      song_uid: The URI of the song to play. Example: "spotify:track:xxxxxxxxxxxxxxxxx"
+    """
+    try:
+        track = SPOTIFY.track(song_uid)
         artist_id = track['artists'][0]['id']
         SPOTIFY.start_playback(uris=[track['uri']])
 
@@ -48,7 +77,7 @@ def play_song(song_name: str, artist_name: str):
                     queue_uris.append(t['uri'])
 
         random.shuffle(queue_uris)
-        for uri in queue_uris[:20]:
+        for uri in queue_uris[:5]:
             SPOTIFY.add_to_queue(uri)
 
         return {"status": "success", "message": f"Playing '{track['name']}' by '{track['artists'][0]['name']}'."}
@@ -141,4 +170,4 @@ def previous_song() -> None:
 
 
 
-TOOLS = [play_song, pause_song, resume_song, skip_song, previous_song]
+TOOLS = [search_song, play_song, pause_song, resume_song, skip_song, previous_song]

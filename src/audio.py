@@ -4,8 +4,19 @@ import numpy as np
 from faster_whisper import WhisperModel
 from silero_vad import load_silero_vad, VADIterator
 
-WHISPER_MODEL = WhisperModel("base", device="cpu", compute_type="int8")
+from kokoro import KPipeline
+
+import warnings
+import logging
+warnings.filterwarnings('ignore', category=UserWarning, message='.*dropout option.*')
+warnings.filterwarnings('ignore', category=FutureWarning, message='.*weight_norm.*')
+warnings.filterwarnings('ignore', message='.*unauthenticated.*HF Hub.*')
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+
+WHISPER_MODEL = WhisperModel("small.en", device="cuda", compute_type="int8")
 VAD_MODEL = load_silero_vad()
+KOKORO_PIPELINE = KPipeline(lang_code='b', repo_id='hexgrad/Kokoro-82M')  # https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md#british-english for the voices
 
 
 
@@ -44,9 +55,17 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
     vad_iterator.reset_states()
     print("Stopped listening, transcribing...")
     full_audio = np.concatenate(audio_buffer)
-    segments, _ = WHISPER_MODEL.transcribe(full_audio, beam_size=5, vad_filter=True)
+    segments, _ = WHISPER_MODEL.transcribe(full_audio, beam_size=5, language="en")
     user_audio = " ".join(seg.text for seg in segments).strip()
 
     # print(user_audio)
     return {'role': 'user', 'content': f'{user_audio}'}
 
+
+
+def speak(text: str, voice='bm_george', speed=1.0):
+    if not text or not text.strip():
+        return
+    for _, _, audio in KOKORO_PIPELINE(text, voice=voice, speed=speed):
+        sd.play(audio, samplerate=24000)
+        sd.wait()
