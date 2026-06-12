@@ -1,8 +1,6 @@
 
-from tools import TOOLS, TOOL_MAP
 from ollama import chat, ChatResponse
-from prompts import load
-from audio import listen, speak
+from state_machine import JarvisMachine
 import sys
 
 # Suppress COM errors that occur when using pycaw to control volume on Windows. These errors are harmless but are hella distracting
@@ -14,29 +12,33 @@ def _suppress_com_errors(unraisable):
 sys.unraisablehook = _suppress_com_errors
 
 
-messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-
-
 
 
 def main():
 
-    speak("Hello, Sir. What can I do for you.")
-    original_volume = TOOL_MAP['get_volume']()['volume']  # get current volume to restore later
-    TOOL_MAP['set_volume'](10)  # set volume to 10 when listening to avoid feedback loop
-    user_audio_message = listen()
-    TOOL_MAP['set_volume'](original_volume)  # set volume back to original when done listening
-    print(f"User: {user_audio_message['content']}")
-    messages.append(user_audio_message)
+    # speak("Hello, Sir. What can I do for you.")
+    # original_volume = TOOL_MAP['get_volume']()['volume']  # get current volume to restore later
+    # TOOL_MAP['set_volume'](10)  # set volume to 10 when listening to avoid feedback loop
+    # user_audio_message = listen()
+    # TOOL_MAP['set_volume'](original_volume)  # set volume back to original when done listening
+    # print(f"User: {user_audio_message['content']}")
+    # messages.append(user_audio_message)
+
+    machine = JarvisMachine()
+
+    
+
     
     # SHOULD ADD ASYNC FOR FASTER TOOL CALLS, BUT THIS IS FINE FOR NOW
     while True:
+
+
         response: ChatResponse = chat(
             model='qwen2.5:7b',
-            messages=messages,
-            tools=TOOLS,
+            messages=machine.messages,
+            tools=machine.TOOLS,
         )
-        messages.append(response.message)
+        machine.messages.append(response.message)
         if response.message.tool_calls:
             for tc in response.message.tool_calls:
                 if tc.function.name in TOOL_MAP:
