@@ -1,0 +1,5 @@
+
+lights:
+  monitor light: light.TEST
+  room light 1: light.TEST2
+	
