@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, message='.*weight_norm
 warnings.filterwarnings('ignore', message='.*unauthenticated.*HF Hub.*')
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
-
+logger = logging.getLogger(__name__)
 WHISPER_MODEL = WhisperModel("small.en", device="cuda", compute_type="int8")
 VAD_MODEL = load_silero_vad()
 KOKORO_PIPELINE = KPipeline(lang_code='b', repo_id='hexgrad/Kokoro-82M')  # https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md#british-english for the voices
@@ -29,7 +29,7 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
     audio_buffer = []
     speech_started = False
 
-    print("Listening...")
+    logger.info("Listening...")
     with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', blocksize=chunk_size) as stream:
         while True:
             chunk, _ = stream.read(chunk_size)
@@ -53,7 +53,7 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
                 return {'role': 'system', 'content': 'User talked for too long. Stopping listening.'}
     
     vad_iterator.reset_states()
-    print("Stopped listening, transcribing...")
+    logger.info("Stopped listening, transcribing...")
     full_audio = np.concatenate(audio_buffer)
     segments, _ = WHISPER_MODEL.transcribe(full_audio, beam_size=5, language="en")
     user_audio = " ".join(seg.text for seg in segments).strip()

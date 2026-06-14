@@ -6,7 +6,7 @@ TOOLS = []
 for _file in Path(__file__).parent.glob("*.py"):
     if _file.stem.startswith("_"):
         continue
-    _module = importlib.import_module(f"tools.{_file.stem}")
+    _module = importlib.import_module(f"llm_tools.{_file.stem}")
     if hasattr(_module, "TOOLS"):
         TOOLS.extend(_module.TOOLS)
 
