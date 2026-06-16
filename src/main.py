@@ -1,5 +1,5 @@
 
-from tools import TOOLS, TOOL_MAP
+from services import TOOLS, TOOL_MAP
 from ollama import chat, ChatResponse
 from prompts import load
 from audio import listen, speak
