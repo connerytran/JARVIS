@@ -1,6 +1,6 @@
 from statemachine import StateMachine, State
 from statemachine.contrib.diagram import DotGraphMachine
-from llm_tools import TOOL_MAP, TOOLS
+from services import TOOL_MAP, TOOLS
 from prompts import load
 from audio import listen, speak
 from ollama import chat, ChatResponse
