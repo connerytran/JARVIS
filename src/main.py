@@ -51,7 +51,6 @@ def main():
             content = response.message.content or ""
             if not content.strip():
                 content = "I'm sorry, Sir, I didn't quite catch that. Could you repeat your request?"
-            print(f"JARVIS: {content}")
             speak(content)
             break
     

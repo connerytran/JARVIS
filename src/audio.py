@@ -66,6 +66,7 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
 def speak(text: str, voice='bm_george', speed=1.0):
     if not text or not text.strip():
         return
+    print(f"JARVIS: {text}")
     for _, _, audio in KOKORO_PIPELINE(text, voice=voice, speed=speed):
         sd.play(audio, samplerate=24000)
         sd.wait()
