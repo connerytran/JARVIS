@@ -3,7 +3,7 @@ import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
 from silero_vad import load_silero_vad, VADIterator
-
+import openwakeword
 from kokoro import KPipeline
 
 import warnings
@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 WHISPER_MODEL = WhisperModel("small.en", device="cuda", compute_type="int8")
 VAD_MODEL = load_silero_vad()
 KOKORO_PIPELINE = KPipeline(lang_code='b', repo_id='hexgrad/Kokoro-82M')  # https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md#british-english for the voices
+OPEN_WAKE_WORD = openwakeword.Model(wakeword_models=["hey_jarvis_v0.1"], inference_framework="onnx")
+
+
+def wake_word(sample_rate=16000, chunk_size=1280):
+    with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', blocksize=chunk_size) as stream:
+        while True:
+            chunk, _ = stream.read(chunk_size)
+            chunk = np.frombuffer(chunk, dtype=np.int16)
+            prediction = OPEN_WAKE_WORD.predict(chunk)
+            if prediction["hey_jarvis_v0.1"] > 0.5: 
+                logger.info("Wake word detected.")
+                OPEN_WAKE_WORD.reset()
+                break
 
 
 

@@ -2,7 +2,7 @@ from statemachine import StateMachine, State
 from statemachine.contrib.diagram import DotGraphMachine
 from services import TOOL_MAP, TOOLS
 from prompts import load
-from audio import listen, speak
+from audio import listen, speak, wake_word
 from ollama import chat, ChatResponse
 
 import logging
@@ -45,11 +45,8 @@ class JarvisMachine(StateMachine):
         self.wake_word_detected()           # Transition to listening state 
 
     def _wait_for_wake_word(self):
-        # Implement Open wake
-        import time
-        time.sleep(2)  # Simulate waiting for wake word
-
-
+        wake_word()
+        
     # ------------- Listening State --------------
     def on_enter_listening(self):
 
