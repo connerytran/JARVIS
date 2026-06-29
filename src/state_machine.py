@@ -30,7 +30,7 @@ class JarvisMachine(StateMachine):
 
     def __init__(self):
         self.messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-        self.volume = None
+        self.volumes = {}
         self.response = None        
         self.follow_up_flag = False
         super().__init__()
@@ -46,13 +46,9 @@ class JarvisMachine(StateMachine):
 
     def _wait_for_wake_word(self):
         wake_word()
-        
+
     # ------------- Listening State --------------
     def on_enter_listening(self):
-
-        self.volume = TOOL_MAP['get_volume']()['volume']    # get current volume to restore later
-        if self.volume > 10:
-            TOOL_MAP['set_volume'](10)                          # set volume to 10 when listening to avoid feedback loop
         
         user_speech = listen()
         if user_speech['role'] == 'system':
@@ -64,11 +60,7 @@ class JarvisMachine(StateMachine):
             self.speech_detected()                       # Transition to thinking state, also triggers the exit function
 
 
-    def on_exit_listening(self):
-        if self.volume is not None:
-            TOOL_MAP['set_volume'](self.volume)          # set volume back to original when done listening
-        
-    
+
     # ------------- Thinking State --------------
     def on_enter_thinking(self):
         logger.info("Entering Thinking state. Generating response...")
