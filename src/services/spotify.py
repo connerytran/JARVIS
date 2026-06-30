@@ -4,6 +4,9 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
 from dotenv import load_dotenv
+import psutil
+import subprocess
+import time
 
 load_dotenv()
 
@@ -19,6 +22,22 @@ SPOTIFY = spotipy.Spotify(auth_manager=SpotifyOAuth(
     scope=SCOPE
     )
 )
+
+
+def _spotify_device() -> str:
+    """Get the first available Spotify device. If no device is found, return None."""
+    
+    if not any(p.name() == "Spotify.exe" for p in psutil.process_iter()):
+        subprocess.Popen(['start', 'spotify:'], shell=True)  # Start Spotify if it's not running
+
+    start = time.time()
+    while time.time() - start < 10:  # Wait up to 10 seconds
+        devices = SPOTIFY.devices().get('devices', [])
+        if devices:
+            return devices[0]['id']  # Return the first available device ID
+        time.sleep(1)
+    return None
+
 
 
 def search_song(song_name: str=None, artist_name: str=None):
@@ -64,7 +83,7 @@ def play_song(song_uid: str = None) -> dict:
     try:
         track = SPOTIFY.track(song_uid)
         artist_id = track['artists'][0]['id']
-        SPOTIFY.start_playback(uris=[track['uri']])
+        SPOTIFY.start_playback(uris=[track['uri']], device_id=_spotify_device())  # Play the requested song on the first available Spotify device
 
         # SPOTIFY.clear_queue()  # TODO no way to clear queue, 
 
@@ -95,7 +114,7 @@ def pause_song() -> None:
     try:
         playback = SPOTIFY.current_playback()
         if playback and playback['is_playing']:
-            SPOTIFY.pause_playback()
+            SPOTIFY.pause_playback(device_id=_spotify_device())
             return {
                 "status": "success",
                 "message": f"Paused the song {playback['item']['name']} by {playback['item']['artists'][0]['name']} on Spotify."
@@ -120,7 +139,7 @@ def resume_song() -> None:
     try:
         playback = SPOTIFY.current_playback()
         if playback and not playback['is_playing']:
-            SPOTIFY.start_playback()
+            SPOTIFY.start_playback(device_id=_spotify_device())
             return {
                 "status": "success",
                 "message": f"Resumed. Playing {playback['item']['name']} by {playback['item']['artists'][0]['name']}."
@@ -145,7 +164,7 @@ def skip_song() -> None:
     try:
         playback = SPOTIFY.current_playback()
         if playback and playback['is_playing']:
-            SPOTIFY.next_track()
+            SPOTIFY.next_track(device_id=_spotify_device())
             return {
                 "status": "success",
                 "message": "Skipped to the next song on Spotify."
@@ -166,7 +185,7 @@ def skip_song() -> None:
 # TODO
 def previous_song() -> None:
     """Skip to the previous song on Spotify"""
-    SPOTIFY.previous_track()
+    SPOTIFY.previous_track(device_id=_spotify_device())
 
 
 
