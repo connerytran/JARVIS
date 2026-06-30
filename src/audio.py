@@ -33,16 +33,16 @@ def _duck_audio(ducked_volumes: dict):
                 continue
 
             vol = session.SimpleAudioVolume
-            if vol:
-                ducked_volumes[session.Process.name()] = vol.GetMasterVolume()
-                vol.SetMasterVolume(0.3, None)
+            if vol: 
+                ducked_volumes[session.Process.name()] = vol.GetMasterVolume()     # get the session's current volume to restore later
+                vol.SetMasterVolume(0.1, None)  # lower volume
     except Exception as e:
         logger.error(f"Failed to duck audio: {session.Process.name() if session.Process else 'Unknown'}: {str(e)}")
 
 
 
 def _restore_audio(ducked_volumes: dict):
-    
+
     """Restore the other application's volume after listening."""
     try:
         for session in AudioUtilities.GetAllSessions():
@@ -125,5 +125,4 @@ def speak(text: str, voice='bm_george', speed=1.0):
         sd.play(audio, samplerate=24000)
         sd.wait()
     _restore_audio(ducked_volumes=volumes)  # Restore the other application's volume after speaking
-
 
