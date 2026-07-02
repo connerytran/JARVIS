@@ -137,18 +137,12 @@ def resume_song() -> None:
     """Resume the currently paused song on Spotify. Checks if a song is currently paused before attempting to resume. 
     If no song is paused, it will return a message indicating that there is nothing to resume."""
     try:
+        SPOTIFY.start_playback(device_id=_spotify_device())
         playback = SPOTIFY.current_playback()
-        if playback and not playback['is_playing']:
-            SPOTIFY.start_playback(device_id=_spotify_device())
-            return {
-                "status": "success",
-                "message": f"Resumed. Playing {playback['item']['name']} by {playback['item']['artists'][0]['name']}."
-            }
-        else:
-            return {
-                "status": "error",
-                "message": "No song is currently paused on Spotify to resume."
-            }
+        return {
+            "status": "success",
+            "message": f"Resumed. Playing {playback['item']['name']} by {playback['item']['artists'][0]['name']}."
+        }
     except Exception as e:
         return {
             "status": "error",

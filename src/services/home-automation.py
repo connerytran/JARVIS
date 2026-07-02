@@ -18,26 +18,30 @@ AVAILABLE_COLOR_TEMPS = list(HA_CONFIG['color_temps'].keys())
 
 
 def control_light(device_name: str, brightness: int = None, color: str = None, temp: str = None) -> dict:
-    light_state = "off" if brightness == 0 else "on"
 
-    entity_id = HA_CONFIG['lights'].get(device_name)
-    color_name = HA_CONFIG['colors'].get(color)
-    color_temp = HA_CONFIG['color_temps'].get(temp)
-    url = f"http://localhost:8123/api/services/light/turn_on"
-    data = {"entity_id": entity_id}
-    if color_name:
-        data["color_name"] = color_name
-    if color_temp is not None:
-        data["color_temp_kelvin"] = color_temp
-    if brightness is not None:
-        data["brightness"] = brightness
-    response = post(url, headers=HEADERS, json=data)
+    try:
+        light_state = "off" if brightness == 0 else "on"
 
-    if response.status_code == 200:
-        return {"status": "success", "message": f"Turned {light_state} {device_name}."}
-    else:
-        return {"status": "error", "message": f"Failed to turn {light_state} {device_name}. Response: {response.text}"}
+        entity_id = HA_CONFIG['lights'].get(device_name)
+        color_name = HA_CONFIG['colors'].get(color)
+        color_temp = HA_CONFIG['color_temps'].get(temp)
+        url = f"http://localhost:8123/api/services/light/turn_on"
+        data = {"entity_id": entity_id}
+        if color_name:
+            data["color_name"] = color_name
+        if color_temp is not None:
+            data["color_temp_kelvin"] = color_temp
+        if brightness is not None:
+            data["brightness"] = brightness
+        response = post(url, headers=HEADERS, json=data, timeout=5)
 
+        if response.status_code == 200:
+            return {"status": "success", "message": f"Turned {light_state} {device_name}."}
+        else:
+            return {"status": "error", "message": f"Failed to turn {light_state} {device_name}. Response: {response.text}"}
+
+    except Exception as e:
+        return {"status": "error", "message": f"Request failed: {str(e)}"}
 
 
 # We need to set the docstring after because f string cant be used in function definition

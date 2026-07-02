@@ -64,7 +64,7 @@ def wake_word(sample_rate=16000, chunk_size=1280):
             chunk, _ = stream.read(chunk_size)
             chunk = np.frombuffer(chunk, dtype=np.int16)
             prediction = OPEN_WAKE_WORD.predict(chunk)
-            if prediction["hey_jarvis_v0.1"] > 0.5: 
+            if prediction["hey_jarvis_v0.1"] > 0.85: 
                 logger.info("Wake word detected.")
                 OPEN_WAKE_WORD.reset()
                 break
