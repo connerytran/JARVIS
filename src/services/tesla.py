@@ -121,14 +121,14 @@ def prep_car(car_name: str = None, temp: int = None) -> dict:
 
     temp_msg = f" and set to {temp}°F" if temp is not None else ""
     return {"status": "success", "message": f"Climate control is on{temp_msg} for {name}."}
-
-
 prep_car.__doc__ = f"""Wakes a Tesla and turns on climate control, optionally setting a target cabin temperature.
 Call this when the user asks to warm up / cool down / prep / get their car ready.
 Args:
     car_name (str, optional): Which car. One of: {', '.join(sorted(set(CARS.keys())))}. Defaults to '{DEFAULT_CAR_NAME}' if not specified.
     temp (int, optional): Target cabin temperature in degrees Fahrenheit. If omitted, uses the vehicle's last-used setting.
 """
+
+
 
 
 TOOLS = [prep_car]

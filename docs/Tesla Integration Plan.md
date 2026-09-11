@@ -145,3 +145,43 @@ Notes:
 - `scripts/tesla_setup.py` (new)
 - `scripts/start_tesla_proxy.ps1` (new)
 - `.env.example`, `.gitignore`, `requirements.txt`, `src/prompts/jarvis-prompt.txt` (edits)
+
+## Appendix — full vehicle-command endpoint catalog (for future tools)
+
+All commands available via `POST /api/1/vehicles/{vin}/command/{name}` through the proxy, grouped by function, for picking what to build next after `prep_car`.
+
+**Climate & Cabin Comfort**
+`auto_conditioning_start`, `auto_conditioning_stop`, `set_temps`, `set_preconditioning_max`, `set_climate_keeper_mode`, `set_cop_temp`, `set_cabin_overheat_protection`, `set_bioweapon_mode`, `remote_seat_heater_request`, `remote_seat_cooler_request`, `remote_auto_seat_climate_request`, `remote_steering_wheel_heater_request`, `remote_steering_wheel_heat_level_request`, `remote_auto_steering_wheel_heat_climate_request`, `add_precondition_schedule`, `remove_precondition_schedule`
+
+**Charging**
+`charge_start`, `charge_stop`, `charge_standard`, `charge_max_range`, `set_charge_limit`, `set_charging_amps`, `charge_port_door_open`, `charge_port_door_close`, `add_charge_schedule`, `remove_charge_schedule`, `set_scheduled_charging`, `set_scheduled_departure`
+
+**Locks, Doors & Physical Access**
+`door_lock`, `door_unlock`, `actuate_trunk`, `window_control`, `sun_roof_control`, `remote_start_drive`
+
+**Lights, Horn & Attention-Getters**
+`flash_lights`, `honk_horn`, `remote_boombox`, `trigger_homelink`
+
+**Media & Audio**
+`media_toggle_playback`, `media_next_track`, `media_prev_track`, `media_next_fav`, `media_prev_fav`, `media_volume_up`, `media_volume_down`, `adjust_volume`
+
+**Navigation**
+`navigation_request`, `navigation_gps_request`, `navigation_sc_request`, `navigation_waypoints_request`, `upcoming_calendar_entries`
+
+**Security & Access Control**
+`set_sentry_mode`, `set_valet_mode`, `reset_valet_pin`, `guest_mode`, `set_pin_to_drive`, `reset_pin_to_drive_pin`, `clear_pin_to_drive_admin`
+
+**Parental & Speed Controls**
+`parental_controls_activate`, `parental_controls_deactivate`, `parental_controls_clear_pin_admin`, `parental_controls_enable_setting`, `parental_controls_set_speed_limit`, `speed_limit_activate`, `speed_limit_deactivate`, `speed_limit_set_limit`, `speed_limit_clear_pin`, `speed_limit_clear_pin_admin`
+
+**Software & System**
+`schedule_software_update`, `cancel_software_update`, `erase_user_data`, `set_vehicle_name`
+
+**Best candidates to build next, ranked by wow-factor per line of code:**
+
+1. `remote_boombox` — plays a sound from the car's external speaker; no cabin needed, nothing else like it in any other smart-home integration.
+2. `honk_horn` + `flash_lights` — no params, trivial to implement, good "where's my car" party trick.
+3. `navigation_request` — "JARVIS, send this address to my car," genuinely useful rather than just a gimmick; pairs well with the `follow_up` tool for getting a destination.
+4. `remote_seat_heater_request` — natural extension of `prep_car` ("prep my car and turn on my seat heater").
+5. `set_sentry_mode` — fits the Iron-Man-security-system persona well.
+6. `sun_roof_control` / `window_control` — fun but safety-sensitive (pinch risk); check the API docs' required state checks closely before wiring these up, more so than the others above.
