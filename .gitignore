@@ -1,6 +1,9 @@
 .env
+.tesla_token_cache.json
+bin/
 .cache
 __pycache__
 _HA-config.yaml
 .venv/
 keys/private-key.pem
+keys/proxy-tls.key

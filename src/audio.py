@@ -102,7 +102,7 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
             if not speech_started and len(audio_buffer) > 200:
                 _restore_audio(ducked_volumes=volumes)  # Restore the other application's volume after listening
                 return {'role': 'system', 'content': 'No speech detected.'}
-            if speech_started and len(audio_buffer) > 800: 
+            if speech_started and len(audio_buffer) > 2000: 
                 _restore_audio(ducked_volumes=volumes)  # Restore the other application's volume after listening
                 return {'role': 'system', 'content': 'User talked for too long. Stopping listening.'}
     
