@@ -34,7 +34,7 @@ DOMAIN = os.getenv("TESLA_DOMAIN")
 REDIRECT_URI = os.getenv("TESLA_REDIRECT_URI", "http://localhost:8585/callback")
 FLEET_API_BASE = os.getenv("TESLA_FLEET_API_BASE", "https://fleet-api.prd.na.vn.cloud.tesla.com")
 AUTH_BASE = "https://auth.tesla.com/oauth2/v3"
-SCOPES = "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds"
+SCOPES = "openid offline_access vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds"
 
 TOKEN_CACHE_PATH = Path(__file__).parent.parent / ".tesla_token_cache.json"
 
@@ -113,6 +113,11 @@ def get_user_tokens() -> dict:
         "redirect_uri": REDIRECT_URI,
         "scope": SCOPES,
         "state": state,
+        # Without this, Tesla silently reuses a prior consent grant on re-login and
+        # won't re-prompt for scopes added after the first authorization -- which is
+        # exactly what happened when `vehicle_location` was added here later.
+        "prompt_missing_scopes": "true",
+        "require_requested_scopes": "true",
     })
     print(f"Opening browser for Tesla login:\n{auth_url}\n")
     webbrowser.open(auth_url)
