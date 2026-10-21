@@ -1,8 +1,8 @@
 from statemachine import StateMachine, State
 from statemachine.contrib.diagram import DotGraphMachine
-from llm_tools import TOOL_MAP, TOOLS
+from services import TOOL_MAP, TOOLS
 from prompts import load
-from audio import listen, speak
+from audio import listen, speak, wake_word
 from ollama import chat, ChatResponse
 
 import logging
@@ -30,8 +30,8 @@ class JarvisMachine(StateMachine):
 
     def __init__(self):
         self.messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-        self.volume = None
-        self.response = None
+        self.volumes = {}
+        self.response = None        
         self.follow_up_flag = False
         super().__init__()
 
@@ -45,17 +45,10 @@ class JarvisMachine(StateMachine):
         self.wake_word_detected()           # Transition to listening state 
 
     def _wait_for_wake_word(self):
-        # Implement Open wake
-        import time
-        time.sleep(2)  # Simulate waiting for wake word
-
+        wake_word()
 
     # ------------- Listening State --------------
     def on_enter_listening(self):
-
-        self.volume = TOOL_MAP['get_volume']()['volume']    # get current volume to restore later
-        if self.volume > 10:
-            TOOL_MAP['set_volume'](10)                          # set volume to 10 when listening to avoid feedback loop
         
         user_speech = listen()
         if user_speech['role'] == 'system':
@@ -67,25 +60,26 @@ class JarvisMachine(StateMachine):
             self.speech_detected()                       # Transition to thinking state, also triggers the exit function
 
 
-    def on_exit_listening(self):
-        if self.volume is not None:
-            TOOL_MAP['set_volume'](self.volume)          # set volume back to original when done listening
-        
-    
+
     # ------------- Thinking State --------------
     def on_enter_thinking(self):
         logger.info("Entering Thinking state. Generating response...")
+        try:
+            self.response: ChatResponse = chat(
+                model='qwen2.5:7b',
+                messages=self.messages,
+                tools=TOOLS,
+            )
+        except BaseException:
+            logger.exception("Error in thinking state")
+            raise
 
-        self.response: ChatResponse = chat(
-            model='qwen2.5:7b',
-            messages=self.messages,
-            tools=TOOLS,
-        )
+        logger.info(f"LLM returned.")
         self.messages.append(self.response.message)
         if self.response.message.tool_calls:
-            self.tool_call_generated()  # Transition to executing state
+            self.tool_call_generated()
         else:
-            self.response_generated()  # Transition to speaking state
+            self.response_generated()
     
 
     # ------------- Executing State --------------
@@ -93,8 +87,9 @@ class JarvisMachine(StateMachine):
         for tc in self.response.message.tool_calls:
             if tc.function.name in TOOL_MAP:
                 if tc.function.name == 'follow_up':     # We need to check if the tool call is a follow-up request
-                    
-                    logger.info("Follow-up needed, transitioning to speaking state to ask question.")
+                    logger.info(f"Calling {tc.function.name}. Follow-up question: {tc.function.arguments['follow_up_question']}")
+                    follow_up_question = TOOL_MAP['follow_up'](follow_up_question=tc.function.arguments['follow_up_question'])
+                    self.messages.append({'role': 'tool', 'tool_name': tc.function.name, 'content': str(follow_up_question)})
                     self.follow_up_flag = True
                     self.follow_up_needed()             # Transition back to listening state to get follow-up input from user
                     return
@@ -112,19 +107,23 @@ class JarvisMachine(StateMachine):
 
     # ------------- Speaking State --------------
     def on_enter_speaking(self):
-        content = self.response.message.content or ""
-        if not content.strip():
-            content = "I'm sorry, Sir, I didn't quite catch that. Could you repeat your request?"
-        logger.info(f"JARVIS: {content}")
-        speak(content)
-        self.conversation_complete()        # Transition back to idle state to wait for next wake word
 
-    def on_exit_speaking(self):
         if self.follow_up_flag:
+            content = self.messages[-1]['content']
+            logger.info(f"JARVIS: {content}")
+            speak(content)
             self.follow_up_flag = False
             self.follow_up_completed()             # Transition back to listening state to get follow-up input from user
+        else: 
+            content = self.response.message.content or ""
+            if not content.strip():
+                content = "I'm sorry, Sir, I didn't quite catch that. Could you repeat your request?"
+            logger.info(f"JARVIS: {content}")
+            speak(content)
+            self.conversation_complete()        # Transition back to idle state to wait for next wake word
 
 
-graph = DotGraphMachine(JarvisMachine)  # pass the class, not an instance
-dot = graph()
-dot.write_png("diagram.png")
+
+# graph = DotGraphMachine(JarvisMachine)  # pass the class, not an instance
+# dot = graph()
+# dot.write_png("diagram.png")
