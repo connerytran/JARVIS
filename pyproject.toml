@@ -1,0 +1,35 @@
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Locally-run, voice-controlled personal AI assistant"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # LLM
+    "ollama>=0.6.2",
+    # Audio pipeline: wake word, VAD, STT, TTS
+    "sounddevice>=0.5.5",
+    "numpy>=2.5.0",
+    "openwakeword>=0.6.0",
+    "silero-vad>=6.2.1",
+    "faster-whisper>=1.2.1",
+    "kokoro>=0.9.4",
+    "en-core-web-sm",  # spaCy model Kokoro's phonemizer needs; it would otherwise try to pip-install it at runtime
+    # Main loop
+    "python-statemachine>=3.2.0",
+    # Tools and integrations
+    "spotipy>=2.26.0",
+    "psutil>=7.2.2",
+    "tesla-fleet-api==1.14.0",
+    "aiohttp>=3.14.3",
+    "requests>=2.34.2",
+    "pyyaml>=6.0.3",
+    "python-dotenv>=1.2.2",
+]
+
+[tool.uv]
+# Mac-only on this branch (Windows lives on the `windows` branch), so only resolve for macOS.
+environments = ["sys_platform == 'darwin'"]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-_Last updated: 2026-10-21_
+_Last updated: 2026-10-22_
 
 Working plan, expected to change as things are learned. No target dates — order is dependency-gated
 (can't start X until Y is done), not calendar-gated. Update this file as phases complete or reorder,
@@ -21,26 +21,26 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
       smooth gain ramps (fast duck, slower release, eased/decibel curve not linear), controlled
       from JARVIS over a local socket. System-wide volume ducking as a placeholder if this drags.
 
-      Work happens on the `mac-port` branch; merge to `main` once a full voice turn works on the Mac.
-      The `windows` branch is a frozen snapshot of the last Windows-working state — no platform
-      checks on `mac-port`, Windows code is replaced outright.
+  Work happens on the `mac-port` branch; merge to `main` once a full voice turn works on the Mac.
+  The `windows` branch is a frozen snapshot of the last Windows-working state — no platform checks
+  on `mac-port`, Windows code is replaced outright.
 
-      - [ ] 1. Migrate to uv: `pyproject.toml` with direct deps only (no Windows-only packages),
-            `uv.lock`, `.python-version` pinned to 3.13. Retire `requirements.txt`.
-      - [ ] 2. Strip Windows code (`pycaw`/`comtypes` in `audio.py` and `system.py`) and move the
-            heavy models to Metal: STT → mlx-whisper, TTS → Kokoro via mlx-audio. No CPU fallback for
-            these. Done when `jarvis.py` reaches Idle.
-      - [ ] 3. Point Home Assistant at the Mac mini (currently hardcoded to `localhost:8123`).
-      - [ ] 4. Voice smoke test: wake word → listen → Qwen → speak, end to end. Expect mic
-            permission / input device / sample rate issues here.
-      - [ ] 5. `set_volume` / `get_volume` via `osascript` (the LLM volume tool — not ducking).
-      - [ ] 6. Spotify: Mac process name and launch command (`open -a Spotify`).
-      - [ ] 7. Model audit: per-state timing logs, then compare Metal options (mlx-whisper vs.
-            parakeet-mlx for STT, mlx-audio Kokoro vs. alternatives for TTS). Not tied to the current
-            models. Wake word and VAD stay on CPU (tiny, always-on — GPU dispatch would cost more
-            than it saves); reassess here if needed.
-      - [ ] 8. Swift ducking helper (scope above) — gets its own plan when reached.
-      - [ ] 9. Merge `mac-port` to `main`.
+  - [x] 1. Migrate to uv: `pyproject.toml` with direct deps only (no Windows-only packages),
+    `uv.lock`, `.python-version` pinned to 3.13. Retire `requirements.txt`.
+  - [ ] 2. Strip Windows code (`pycaw`/`comtypes` in `audio.py` and `system.py`) and move the heavy
+    models to Metal: STT → mlx-whisper, TTS → Kokoro via mlx-audio. No CPU fallback for these.
+    Done when `jarvis.py` reaches Idle.
+  - [ ] 3. Point Home Assistant at the Mac mini (currently hardcoded to `localhost:8123`).
+  - [ ] 4. Voice smoke test: wake word → listen → Qwen → speak, end to end. Expect mic
+    permission / input device / sample rate issues here.
+  - [ ] 5. `set_volume` / `get_volume` via `osascript` (the LLM volume tool — not ducking).
+  - [ ] 6. Spotify: Mac process name and launch command (`open -a Spotify`).
+  - [ ] 7. Model audit: per-state timing logs, then compare Metal options (mlx-whisper vs.
+    parakeet-mlx for STT, mlx-audio Kokoro vs. alternatives for TTS). Not tied to the current
+    models. Wake word and VAD stay on CPU (tiny, always-on — GPU dispatch would cost more than it
+    saves); reassess here if needed.
+  - [ ] 8. Swift ducking helper (scope above) — gets its own plan when reached.
+  - [ ] 9. Merge `mac-port` to `main`.
 
 - [ ] **2. Benchmark.** Qwen 2.5 7B on the MacBook Air under realistic agentic workloads (not
       generic chat benchmarks). Ollama vs. llama.cpp/MLX directly. Test lower quantization. Measure
@@ -77,11 +77,12 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
       Exploratory — doesn't need to ship.
 
 - [ ] **9. Features & hardware (backlog).** Not started, no fixed order:
-      - On-the-way navigation (Tesla Phase D — Routes API, sample points, search along route)
-      - Multi-stop Tesla navigation (currently capped at 2 stops — see navigation investigation doc)
-      - Mac Studio M5 Max purchase decision, informed by Phase 2 benchmarks
-      - MCP servers for tools (optional — one server per domain: Spotify, Tesla, Home Assistant,
-        system controls; purely an interop/sharing upgrade, not a performance one)
+
+  - On-the-way navigation (Tesla Phase D — Routes API, sample points, search along route)
+  - Multi-stop Tesla navigation (currently capped at 2 stops — see navigation investigation doc)
+  - Mac Studio M5 Max purchase decision, informed by Phase 2 benchmarks
+  - MCP servers for tools (optional — one server per domain: Spotify, Tesla, Home Assistant,
+    system controls; purely an interop/sharing upgrade, not a performance one)
 
 ## Notes for whoever picks this up next (including future Claude Code sessions)
 

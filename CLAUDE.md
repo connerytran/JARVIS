@@ -1,6 +1,6 @@
 # JARVIS
 
-_Last updated: 2026-10-21_
+_Last updated: 2026-10-22_
 
 A locally-run, voice-controlled personal AI assistant (Python, Windows → porting to macOS).
 Personal project, not a team codebase — built to learn by doing, not to have code generated
@@ -42,6 +42,8 @@ wholesale. Prefer small, explained steps over large autonomous changes.
 
 ## Current stack
 
+- Environment: uv, Python 3.13 (`pyproject.toml` + `uv.lock`). `uv sync` to install,
+  `uv run python src/jarvis.py` to run. `tesla-fleet-api` is pinned exactly — upgrade deliberately.
 - LLM: Qwen 2.5 7B via Ollama
 - STT: faster-whisper
 - TTS: Kokoro
