@@ -7,5 +7,6 @@ _HA-config.yaml
 _tesla-addresses.yaml
 .venv/
 .venv313/
+models/
 keys/private-key.pem
 keys/proxy-tls.key

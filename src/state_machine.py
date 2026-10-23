@@ -30,7 +30,6 @@ class JarvisMachine(StateMachine):
 
     def __init__(self):
         self.messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-        self.volumes = {}
         self.response = None        
         self.follow_up_flag = False
         super().__init__()

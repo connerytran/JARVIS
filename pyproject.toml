@@ -12,8 +12,6 @@ dependencies = [
     "numpy>=2.5.0",
     "openwakeword>=0.6.0",
     "silero-vad>=6.2.1",
-    "faster-whisper>=1.2.1",
-    "kokoro>=0.9.4",
     "en-core-web-sm",  # spaCy model Kokoro's phonemizer needs; it would otherwise try to pip-install it at runtime
     # Main loop
     "python-statemachine>=3.2.0",
@@ -25,6 +23,8 @@ dependencies = [
     "requests>=2.34.2",
     "pyyaml>=6.0.3",
     "python-dotenv>=1.2.2",
+    "mlx-audio>=0.6.1",
+    "misaki[en]>=0.9.4",
 ]
 
 [tool.uv]

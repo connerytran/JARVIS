@@ -1,6 +1,6 @@
 # JARVIS
 
-_Last updated: 2026-10-22_
+_Last updated: 2026-10-23_
 
 A locally-run, voice-controlled personal AI assistant (Python, Windows → porting to macOS).
 Personal project, not a team codebase — built to learn by doing, not to have code generated
@@ -45,9 +45,10 @@ wholesale. Prefer small, explained steps over large autonomous changes.
 - Environment: uv, Python 3.13 (`pyproject.toml` + `uv.lock`). `uv sync` to install,
   `uv run python src/jarvis.py` to run. `tesla-fleet-api` is pinned exactly — upgrade deliberately.
 - LLM: Qwen 2.5 7B via Ollama
-- STT: faster-whisper
-- TTS: Kokoro
-- Wake word: openWakeWord
+- STT: Whisper large-v3-turbo via mlx-audio (Metal)
+- TTS: Kokoro-82M via mlx-audio (Metal), voice `bm_george`
+- Wake word: openWakeWord (CPU, ONNX), models in `models/openwakeword/` (gitignored)
+- VAD: Silero (CPU)
 - Smart home: Home Assistant on a 2012 Mac mini running headless Ubuntu Server (not local to the
   JARVIS host), Tuya/Luvoni lights as the primary device integration
 - Music: Spotipy (Spotify)
