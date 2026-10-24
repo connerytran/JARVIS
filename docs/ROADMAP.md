@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-24_
 
 Working plan, expected to change as things are learned. No target dates — order is dependency-gated
 (can't start X until Y is done), not calendar-gated. Update this file as phases complete or reorder,
@@ -32,10 +32,11 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     Whisper large-v3-turbo, TTS → Kokoro-82M (`bm_george`, same voice as before). openWakeWord
     models now live in `models/openwakeword/` (gitignored, downloaded on startup if missing).
     `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 8.
-  - [ ] 3. Point Home Assistant at the Mac mini (currently hardcoded to `localhost:8123`).
-    `home-automation.py` is commented out until then.
+  - [x] 3. Point Home Assistant at the Mac mini: `HA_URL` in `home-automation.py`, LAN IP only.
+    Works at home; unreachable away from home. Tailscale-first with LAN fallback is the upgrade
+    path if JARVIS travels (and avoids sending the HA token to whatever owns that IP elsewhere).
   - [x] 4. Voice smoke test: wake word → listen → Qwen → speak, end to end. Works, with low
-    latency. Tools not yet exercised (Home Assistant and Spotify disabled).
+    latency. Light control verified; Spotify still disabled.
   - [ ] 5. `set_volume` / `get_volume` via `osascript` (the LLM volume tool — not ducking).
   - [ ] 6. Spotify: Mac process name and launch command (`open -a Spotify`). `spotify.py` is
     commented out until then.
