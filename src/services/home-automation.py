@@ -5,7 +5,7 @@ import os
 import yaml
 
 load_dotenv()
-HA_URL = "http://192.168.1.254:8123"  # Mac mini on the home LAN; reserve this IP in the router so it doesn't change
+HA_URL = os.getenv("HA_URL")  # e.g. http://<mac mini LAN IP>:8123 -- reserve that IP in the router so it doesn't change
 HA_TOKEN = os.getenv("HA_TOKEN")
 HEADERS = {"Authorization": f"Bearer {HA_TOKEN}"}
 

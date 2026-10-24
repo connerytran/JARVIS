@@ -32,7 +32,7 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     Whisper large-v3-turbo, TTS → Kokoro-82M (`bm_george`, same voice as before). openWakeWord
     models now live in `models/openwakeword/` (gitignored, downloaded on startup if missing).
     `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 8.
-  - [x] 3. Point Home Assistant at the Mac mini: `HA_URL` in `home-automation.py`, LAN IP only.
+  - [x] 3. Point Home Assistant at the Mac mini: `HA_URL` in `.env`, LAN IP only.
     Works at home; unreachable away from home. Tailscale-first with LAN fallback is the upgrade
     path if JARVIS travels (and avoids sending the HA token to whatever owns that IP elsewhere).
   - [x] 4. Voice smoke test: wake word → listen → Qwen → speak, end to end. Works, with low
