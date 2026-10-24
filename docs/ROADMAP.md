@@ -36,11 +36,11 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     Works at home; unreachable away from home. Tailscale-first with LAN fallback is the upgrade
     path if JARVIS travels (and avoids sending the HA token to whatever owns that IP elsewhere).
   - [x] 4. Voice smoke test: wake word → listen → Qwen → speak, end to end. Works, with low
-    latency. Light control verified; Spotify still disabled.
+    latency. Light control, volume and Spotify verified.
   - [x] 5. `set_volume` / `get_volume` via `osascript` (the LLM volume tool — not ducking). Clamps to
     0–100, unmutes when set above 0. Verified by voice.
-  - [ ] 6. Spotify: Mac process name and launch command (`open -a Spotify`). `spotify.py` is
-    commented out until then.
+  - [x] 6. Spotify: Mac process name and launch command (`open -g -a Spotify`, background). Token
+    cache pinned to the repo-root `.cache`. Plays on `devices[0]`; picking a device is a later feature.
   - [ ] 7. Model audit: per-state timing logs, then compare Metal options via mlx-audio (Whisper
     turbo vs. Parakeet TDT 0.6B v3 for STT; Kokoro vs. alternatives like Qwen3-TTS / KittenTTS for
     TTS). Not tied to the current models. Wake word and VAD stay on CPU (tiny, always-on — GPU
