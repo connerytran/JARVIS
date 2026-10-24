@@ -39,8 +39,13 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     latency. Light control, volume and Spotify verified.
   - [x] 5. `set_volume` / `get_volume` via `osascript` (the LLM volume tool — not ducking). Clamps to
     0–100, unmutes when set above 0. Verified by voice.
-  - [x] 6. Spotify: Mac process name and launch command (`open -g -a Spotify`, background). Token
-    cache pinned to the repo-root `.cache`. Plays on `devices[0]`; picking a device is a later feature.
+  - [x] 6. Spotify: Mac process name and launch command (`open -a Spotify`). Token cache pinned to
+    the repo-root `.cache`. The Web API's `start_playback` is silently ignored by the Mac app (stops
+    the current song, never loads the new one), so `play_song` starts tracks via AppleScript
+    (`src/_macos.py`), validates the URI first (it goes into the script), and confirms playback
+    before reporting success. Search/pause/resume/skip/previous still use the Web API. Artist
+    queueing is commented out for now. Needs macOS Automation permission for whichever app runs
+    JARVIS. Device choice is unchanged (`devices[0]`); picking a device is a later feature.
   - [ ] 7. Tesla: the code is already portable, but its gitignored local files didn't come over.
     Copy `.tesla_token_cache.json` (repo root) and `src/services/_tesla-addresses.yaml` from the PC
     — or re-run `scripts/tesla_setup.py` for a fresh token if the copied one is stale (Tesla rotates

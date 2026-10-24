@@ -1,5 +1,10 @@
 
+import os
 from pathlib import Path
+
+# transformers (used by mlx-audio's Whisper tokenizer) resets its own log level when it's first imported, so
+# this has to be set before that import. Hides its one-per-run tokenizer warning; errors still show.
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 import sounddevice as sd
 import numpy as np
