@@ -46,11 +46,10 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     before reporting success. Search/pause/resume/skip/previous still use the Web API. Artist
     queueing is commented out for now. Needs macOS Automation permission for whichever app runs
     JARVIS. Device choice is unchanged (`devices[0]`); picking a device is a later feature.
-  - [ ] 7. Tesla: the code is already portable, but its gitignored local files didn't come over.
-    Copy `.tesla_token_cache.json` (repo root) and `src/services/_tesla-addresses.yaml` from the PC
-    — or re-run `scripts/tesla_setup.py` for a fresh token if the copied one is stale (Tesla rotates
-    the refresh token on every use). `keys/` and the `.env` entries are already here. Verify
-    `prep_car` and `navigate_car` by voice.
+  - [x] 7. Tesla: the code was already portable; only its gitignored local files needed to come
+    over (`.tesla_token_cache.json`, `src/services/_tesla-addresses.yaml`). If the token ever goes
+    stale, re-run `scripts/tesla_setup.py` (Tesla rotates the refresh token on every use).
+    `prep_car` and `navigate_car` verified by voice.
   - [ ] 8. Model audit: per-state timing logs, then compare Metal options via mlx-audio (Whisper
     turbo vs. Parakeet TDT 0.6B v3 for STT; Kokoro vs. alternatives like Qwen3-TTS / KittenTTS for
     TTS). Not tied to the current models. Wake word and VAD stay on CPU (tiny, always-on — GPU

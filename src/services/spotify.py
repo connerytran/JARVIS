@@ -83,7 +83,7 @@ def search_song(song_name: str=None, artist_name: str=None):
 
 def play_song(song_uid: str = None) -> dict:
     """ ALWAYS USE search_song BEFORE THIS TO GET A VALID SONG UID.
-    Play a song on Spotify and queue shuffled songs from the artist after. 
+    Play a song on Spotify. 
     Args:
       song_uid: The URI of the song to play. Example: "spotify:track:xxxxxxxxxxxxxxxxx"
     """
@@ -113,8 +113,6 @@ def play_song(song_uid: str = None) -> dict:
                 break
         if not started:
             return {"status": "error", "message": f"Spotify didn't start playing '{track['name']}'."}
-
-        # SPOTIFY.clear_queue()  # TODO no way to clear queue,
 
         # queue up to 20 songs from the same artist, excluding the currently playing track, shuffled in random order
         # albums = SPOTIFY.artist_albums(artist_id, album_type='album', limit=5)
