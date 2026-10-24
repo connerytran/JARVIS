@@ -14,14 +14,14 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
 
 ## Phases
 
-- [ ] **1. Port to Mac.** Resolve Windows-specific code paths (file paths, subprocess calls,
-      Windows-only libs). Audit which models (STT/TTS/wake word) have Metal/MLX support vs. fall
-      back to slow reference code on Apple Silicon. Build the Swift audio-ducking helper: Core
-      Audio process taps (macOS 14.4+), ducks any app's audio including browser helper processes,
-      smooth gain ramps (fast duck, slower release, eased/decibel curve not linear), controlled
-      from JARVIS over a local socket. System-wide volume ducking as a placeholder if this drags.
+- [ ] **1. Port to Mac.** Get JARVIS working on the Mac the way it worked on Windows — porting only,
+      no tuning. Resolve Windows-specific code paths (file paths, subprocess calls, Windows-only
+      libs) and rebuild the audio ducking as a Swift helper: Core Audio process taps (macOS 14.4+),
+      ducks any app's audio including browser helper processes, smooth gain ramps (fast duck, slower
+      release, eased/decibel curve not linear), controlled from JARVIS over a local socket.
+      System-wide volume ducking as a placeholder if this drags.
 
-  Work happens on the `mac-port` branch; merge to `main` once a full voice turn works on the Mac.
+  Work happens on the `mac-port` branch; merge to `main` once the port is complete (step 9).
   The `windows` branch is a frozen snapshot of the last Windows-working state — no platform checks
   on `mac-port`, Windows code is replaced outright.
 
@@ -31,7 +31,8 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     models to Metal. Both run through mlx-audio, so swapping models is a model-ID change: STT →
     Whisper large-v3-turbo, TTS → Kokoro-82M (`bm_george`, same voice as before). openWakeWord
     models now live in `models/openwakeword/` (gitignored, downloaded on startup if missing).
-    `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 9.
+    Wake word and VAD stay on CPU (tiny, always-on — GPU dispatch would cost more than it saves).
+    `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 8.
   - [x] 3. Point Home Assistant at the Mac mini: `HA_URL` in `.env`, LAN IP only.
     Works at home; unreachable away from home. Tailscale-first with LAN fallback is the upgrade
     path if JARVIS travels (and avoids sending the HA token to whatever owns that IP elsewhere).
@@ -50,18 +51,19 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     over (`.tesla_token_cache.json`, `src/services/_tesla-addresses.yaml`). If the token ever goes
     stale, re-run `scripts/tesla_setup.py` (Tesla rotates the refresh token on every use).
     `prep_car` and `navigate_car` verified by voice.
-  - [ ] 8. Model audit: per-state timing logs, then compare Metal options via mlx-audio (Whisper
-    turbo vs. Parakeet TDT 0.6B v3 for STT; Kokoro vs. alternatives like Qwen3-TTS / KittenTTS for
-    TTS). Not tied to the current models. Wake word and VAD stay on CPU (tiny, always-on — GPU
-    dispatch would cost more than it saves); reassess here if needed. Also: pin Hugging Face model
-    revisions; Whisper beam search (old code used `beam_size=5`); Silero via ONNX could drop torch.
-  - [ ] 9. Swift ducking helper (scope above) — gets its own plan when reached.
-  - [ ] 10. Merge `mac-port` to `main`.
+  - [ ] 8. Swift ducking helper (scope above) — gets its own plan when reached.
+  - [ ] 9. Merge `mac-port` to `main`.
 
-- [ ] **2. Benchmark.** Qwen 2.5 7B on the MacBook Air under realistic agentic workloads (not
-      generic chat benchmarks). Ollama vs. llama.cpp/MLX directly. Test lower quantization. Measure
-      tool-schema size and current `num_ctx`. Goal: find out if the bottleneck is Ollama overhead,
-      the model, or the hardware, before spending on either.
+- [ ] **2. Test mode + baseline.** Instrumentation, so every later phase can be measured. Do this
+      before anything changes the pipeline — it captures the "before" for the Phase 7 comparison.
+  - `--test` flag on `jarvis.py` (argparse → `setup_logger()`). Normal runs stay as they are.
+  - Test mode: millisecond timestamps; logs to the terminal *and* `tests/logs/<timestamp>.log`
+    (gitignored — contains transcripts). Only JARVIS's own loggers go verbose, not every library's.
+  - Timings: STT (end of speech → transcript), TTS (time to first audio + total), LLM (per call,
+    plus Ollama's own stats: prompt/output tokens, tokens/s, load time).
+  - `timings.jsonl` next to the log: one line of numbers per turn, so comparing runs is trivial.
+  - Record a baseline on the freshly ported pipeline, and keep it.
+  - Also: pin Hugging Face model revisions (STT/TTS model IDs currently track each repo's latest).
 
 - [ ] **3. Core & queue cleanup.** Split core (thinking/executing) from adapters (entry points).
       Add a single FIFO request queue between them. Tools return structured results — success,
@@ -78,25 +80,52 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
       memory ends up designed.
 
 - [ ] **6. Home voice (LiveKit).** LiveKit console mode — local mic/speakers, no server/room/WebRTC.
-      Qwen via Ollama as the LLM. Streaming STT (evaluate a streaming option vs. faster-whisper).
-      Streaming Kokoro TTS (not the OpenAI-compatible server route — that breaks streaming).
-      Barge-in comes from LiveKit's VAD + turn detector, replacing the hand-built multiprocessing
-      version. Home-only — no remote/phone audio.
+      Qwen via Ollama as the LLM. Barge-in comes from LiveKit's VAD + turn detector, replacing the
+      hand-built multiprocessing version (and the fixed 1.2 s silence wait). Home-only — no
+      remote/phone audio.
+  - Keep the models from Phase 1 at first, so Phase 7 can measure what LiveKit alone gains.
+  - STT: LiveKit can wrap a non-streaming model with VAD (roughly today's behaviour); native
+    streaming STT is the real latency win (transcript ready as you stop talking). Streaming
+    candidates that run on Metal: Parakeet TDT 0.6B v3 (`parakeet-mlx` has a streaming
+    transcriber; people already run it with LiveKit on Apple Silicon), NVIDIA Nemotron streaming
+    ASR (supported by mlx-audio), Moonshine (tiny, less accurate on names). Whisper isn't natively
+    streaming — keep it only as an accuracy reference.
+  - TTS: Kokoro works via LiveKit's sentence splitting (speech starts after the first sentence,
+    not the whole reply). Not via the OpenAI-compatible server route — that breaks streaming —
+    so likely a small custom plugin around mlx-audio. Qwen3-TTS 0.6B streams natively (and can
+    clone a voice) but is much bigger.
+  - VAD: LiveKit's Silero plugin replaces ours. Note: torch stays installed regardless — `misaki[en]`
+    pulls it in via spaCy's transformer extras.
+  - Metal caveat: the most complete community local plugin (sherpa-onnx) is CPU-only; Metal-native
+    streaming means MLX models + our own plugin.
 
-- [ ] **7. HTTP adapter + iOS app.** Text-in/text-out HTTP endpoint feeding the same FIFO queue.
+- [ ] **7. Benchmark.** Realistic agentic workloads on the MacBook Air (not generic chat benchmarks),
+      using Phase 2's test mode. Change one variable at a time so each gain is attributable:
+  1. Phase 2 baseline vs. LiveKit with the same models — what LiveKit alone buys.
+  2. Swap speech models one at a time (Phase 6 candidates).
+  3. Swap the LLM. Candidates (all in Ollama with tool calling; several have `-mlx` builds):
+     Qwen 2.5 7B (current), Qwen3.5 9B (direct successor — main challenger), Qwen3.5 4B (speed
+     option), Gemma 4 12B, Gemma 4 E4B (accepts audio input directly), gpt-oss-20b (strong tool
+     calling; check it fits in 24 GB next to the speech models). Thinking/reasoning off or low
+     for voice.
+  4. Ollama vs. llama.cpp/MLX directly; lower quantization; tool-schema size and `num_ctx`.
+  - Goal: find out whether the bottleneck is Ollama overhead, the model, or the hardware, before
+    spending on either.
+
+- [ ] **8. HTTP adapter + iOS app.** Text-in/text-out HTTP endpoint feeding the same FIFO queue.
       iOS app as a thin, protocol-agnostic client — no audio, no LiveKit. Siri integration via an
       App Intent. Results delivered as notifications. Reachable over Tailscale.
 
-- [ ] **8. Experiments — Kev.** Kev 0.8B as a routing/decision layer alongside Qwen. Benchmark
+- [ ] **9. Experiments — Kev.** Kev 0.8B as a routing/decision layer alongside Qwen. Benchmark
       actual latency on the Air before committing — the 4B+ sizes are likely too slow and too big
       for 24GB alongside Qwen. If the 0.8B earns its place, fine-tune it on real JARVIS logs.
       Exploratory — doesn't need to ship.
 
-- [ ] **9. Features & hardware (backlog).** Not started, no fixed order:
+- [ ] **10. Features & hardware (backlog).** Not started, no fixed order:
 
   - On-the-way navigation (Tesla Phase D — Routes API, sample points, search along route)
   - Multi-stop Tesla navigation (currently capped at 2 stops — see navigation investigation doc)
-  - Mac Studio M5 Max purchase decision, informed by Phase 2 benchmarks
+  - Mac Studio M5 Max purchase decision, informed by Phase 7 benchmarks
   - MCP servers for tools (optional — one server per domain: Spotify, Tesla, Home Assistant,
     system controls; purely an interop/sharing upgrade, not a performance one)
 
@@ -107,5 +136,8 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
   front.
 - Commit directly to `main` in small increments. Use a short-lived branch only for something risky
   enough that `main` might be broken for a while (e.g. mid-port) — merge it back within days.
+- Once Phase 2 exists, re-run test mode after any change that could affect runtimes (new model,
+  pipeline restructure, memory, LangGraph, LiveKit) and compare against the previous run, so a
+  slowdown is caught in the phase that caused it.
 - This file is expected to be wrong in places. If a phase's scope turns out off, or the order stops
   making sense, edit it — don't preserve a stale plan for consistency's sake.

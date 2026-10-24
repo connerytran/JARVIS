@@ -39,6 +39,9 @@ wholesale. Prefer small, explained steps over large autonomous changes.
 - Prefer in-code defaults over adding new `.env` entries.
 - Maintain markdown reference docs for architecture and setup rather than letting context live only
   in chat history.
+- After any change that could affect runtimes (models, pipeline structure, memory, LangGraph,
+  LiveKit), run JARVIS in test mode (`--test`, once it exists — ROADMAP Phase 2) and compare the
+  timings against the previous run before moving on.
 
 ## Current stack
 
