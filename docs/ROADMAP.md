@@ -31,7 +31,7 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     models to Metal. Both run through mlx-audio, so swapping models is a model-ID change: STT →
     Whisper large-v3-turbo, TTS → Kokoro-82M (`bm_george`, same voice as before). openWakeWord
     models now live in `models/openwakeword/` (gitignored, downloaded on startup if missing).
-    `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 8.
+    `set_volume`/`get_volume` are stubs until step 5; ducking removed until step 9.
   - [x] 3. Point Home Assistant at the Mac mini: `HA_URL` in `.env`, LAN IP only.
     Works at home; unreachable away from home. Tailscale-first with LAN fallback is the upgrade
     path if JARVIS travels (and avoids sending the HA token to whatever owns that IP elsewhere).
@@ -41,13 +41,18 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     0–100, unmutes when set above 0. Verified by voice.
   - [x] 6. Spotify: Mac process name and launch command (`open -g -a Spotify`, background). Token
     cache pinned to the repo-root `.cache`. Plays on `devices[0]`; picking a device is a later feature.
-  - [ ] 7. Model audit: per-state timing logs, then compare Metal options via mlx-audio (Whisper
+  - [ ] 7. Tesla: the code is already portable, but its gitignored local files didn't come over.
+    Copy `.tesla_token_cache.json` (repo root) and `src/services/_tesla-addresses.yaml` from the PC
+    — or re-run `scripts/tesla_setup.py` for a fresh token if the copied one is stale (Tesla rotates
+    the refresh token on every use). `keys/` and the `.env` entries are already here. Verify
+    `prep_car` and `navigate_car` by voice.
+  - [ ] 8. Model audit: per-state timing logs, then compare Metal options via mlx-audio (Whisper
     turbo vs. Parakeet TDT 0.6B v3 for STT; Kokoro vs. alternatives like Qwen3-TTS / KittenTTS for
     TTS). Not tied to the current models. Wake word and VAD stay on CPU (tiny, always-on — GPU
     dispatch would cost more than it saves); reassess here if needed. Also: pin Hugging Face model
     revisions; Whisper beam search (old code used `beam_size=5`); Silero via ONNX could drop torch.
-  - [ ] 8. Swift ducking helper (scope above) — gets its own plan when reached.
-  - [ ] 9. Merge `mac-port` to `main`.
+  - [ ] 9. Swift ducking helper (scope above) — gets its own plan when reached.
+  - [ ] 10. Merge `mac-port` to `main`.
 
 - [ ] **2. Benchmark.** Qwen 2.5 7B on the MacBook Air under realistic agentic workloads (not
       generic chat benchmarks). Ollama vs. llama.cpp/MLX directly. Test lower quantization. Measure
