@@ -69,7 +69,7 @@ class JarvisMachine(StateMachine):
                 messages=self.messages,
                 tools=TOOLS,
             )
-        except BaseException:
+        except Exception:  # not BaseException: a Ctrl-C here isn't an error, let it reach main() quietly
             logger.exception("Error in thinking state")
             raise
 
