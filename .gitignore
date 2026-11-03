@@ -8,5 +8,6 @@ _tesla-addresses.yaml
 .venv/
 .venv313/
 models/
+.build/
 keys/private-key.pem
 keys/proxy-tls.key
