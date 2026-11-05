@@ -11,3 +11,4 @@ models/
 .build/
 keys/private-key.pem
 keys/proxy-tls.key
+.vscode/

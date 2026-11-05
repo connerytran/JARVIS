@@ -52,7 +52,7 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
   knows about. Result: we get a process object immediately (no audio needed first), and Spotify shows
   as playing.
 - [x] **Piece 2: create the tap.** Describe the tap and ask Core Audio to create it. Needed the
-  package minimum raised to macOS 14.2 (`platforms: [.macOS("14.2")]`), where taps were introduced.
+  package minimum raised to macOS 14.2, where taps were introduced (now 15, for `Atomic` in milestone 3).
   - Look up: `CATapDescription(stereoGlobalTapButExcludeProcesses:)`, `muteBehavior`, `uuid`,
     `isPrivate`, `AudioHardwareCreateProcessTap`.
   - Exclude our own process object from piece 1.
@@ -108,17 +108,25 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
 
 ## Milestone 2: fixed duck
 
-- [ ] In the callback, multiply every sample by a fixed gain: −20 dB = `pow(10, -20 / 20)` ≈ 0.1.
-- [ ] Done when: music plays clearly quieter while the helper runs, and returns to normal when it quits.
+- [x] In the callback, multiply every sample by a fixed gain: −20 dB = `pow(10, -20 / 20)` ≈ 0.1.
+  A format guard exits early unless the tap delivers 32-bit floats, since the callback reads the
+  bytes as `Float`s.
+- [x] Done when: music plays clearly quieter while the helper runs, and returns to normal when it quits.
+- The duck is relative: our gain applies before the system volume, which scales JARVIS too, so the
+  music always sits the same 20 dB further below JARVIS at any volume setting.
 
 ## Milestone 3: smooth ramp
 
-- [ ] Hold the target gain (ducked or not) in an atomic value the callback can read without a lock
-  (look up the `Synchronization` module's `Atomic`).
-- [ ] Ramp in the callback: move through dB space over about 200 ms (down) or 800 ms (up), shaped
-  with smoothstep (`t * t * (3 - 2 * t)`), and convert to a linear gain per sample.
-- [ ] Temporary test trigger: duck after 3 s, release after 6 s.
-- [ ] Done when: the fade sounds smooth, with no clicks or jumps.
+- [x] Hold whether we're ducked in an `Atomic<Bool>` the callback can read without a lock (the
+  `Synchronization` module, which raised the package minimum to macOS 15). The callback loads it once
+  per callback.
+- [x] Ramp in `Ramp.swift`: move through dB space over 200 ms (down) or 800 ms (up), shaped with
+  smoothstep (`t * t * (3 - 2 * t)`), and convert to a linear gain once per frame, so L and R get the
+  same gain. A new fade starts from the current dB, so a release mid-duck reverses smoothly.
+  The format guard also requires interleaved audio: in separate L and R buffers, the ramp would advance
+  twice per frame.
+- [x] Temporary test trigger: duck after 3 s, release after 6 s (`DispatchQueue.main.asyncAfter`).
+- [x] Done when: the fade sounds smooth, with no clicks or jumps.
 
 ## Milestone 4: control socket
 

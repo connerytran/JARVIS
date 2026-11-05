@@ -1,5 +1,6 @@
 import CoreAudio
 import Foundation
+import Synchronization // for Atomic
 
 print("ducker: starting on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 
@@ -83,7 +84,7 @@ func isPlaying(_ process: AudioObjectID) -> Bool {
     var running: UInt32 = 0
     var size = UInt32(MemoryLayout<UInt32>.size)
     return AudioObjectGetPropertyData(process, &address, 0, nil, &size, &running) == 0 && running != 0
-}   // uses AudioObjectGetPropertyData to ask the process this question: kAudioProcessPropertyIsRunningOutput. 
+}   // uses AudioObjectGetPropertyData to ask the process this question: kAudioProcessPropertyIsRunningOutput.
     // all the other parts like running and size is used for C to write the answer back to, since it doesn't understand Swift objects
 
 
@@ -165,8 +166,17 @@ guard let format: AudioStreamBasicDescription = tapFormat(of: tapID) else {
     exit(1)
 }
 let isFloat = format.mFormatFlags & kAudioFormatFlagIsFloat != 0
+let isInterleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0 // means L and R are in one buffer, not split into separate buffers
 print("ducker: tap format: \(format.mSampleRate) Hz, \(format.mChannelsPerFrame) channels, " +
-      "\(format.mBitsPerChannel) bits, float: \(isFloat)")
+      "\(format.mBitsPerChannel) bits, float: \(isFloat), interleaved: \(isInterleaved)")
+
+// The callback treats every 4 bytes as one Float sample, so anything else would come out as noise. It also expects
+// L and R in one buffer (L, R, L, R…); split into separate buffers, the ramp would advance once per buffer.
+guard isFloat, format.mBitsPerChannel == 32, isInterleaved else {
+    print("ducker: expected interleaved 32-bit float samples; can't process this format")
+    AudioHardwareDestroyProcessTap(tapID)
+    exit(1)
+}
 
 // MARK: - Piece 3: Aggregate Device
 
@@ -206,21 +216,41 @@ print("ducker: aggregate device created, aggregateID: \(aggregateID)")
 
 // MARK: - Piece 4: callback + start
 
+// How far to duck, relative to what's playing: −20 dB = one tenth of the amplitude. 10^(dB/20) turns decibels into
+// the number each sample is multiplied by. (Milestone 4 makes this the --duck-db option.)
+let duckDB: Float = -20
+print("ducker: duck depth \(duckDB) dB")
+
+// This flag is for whether we should be ducked or not
+let ducked = Atomic<Bool>(false)        // `let` because it's changed with store(), never replaced
+let ramp = Ramp(sampleRate: Float(format.mSampleRate), duckDB: duckDB)
+
 // Step 1: the callback. Core Audio calls this on its real-time thread every few milliseconds, handing us the
-// tap's audio (input) and the output device's buffer to fill (output) for the same moment. For now it copies
-// input to output unchanged. Real-time rules: no printing, no allocating, no locks.
+// tap's audio (input) and the output device's buffer to fill (output) for the same moment. It writes each input
+// frame to the output multiplied by the ramp's gain. Real-time rules: no printing, no allocating, no locks.
 let ioBlock: AudioDeviceIOBlock = { _, inInputData, _, outOutputData, _ in
+    let isDucked = ducked.load(ordering: .relaxed)  // read once per callback; every frame in this buffer agrees
     let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
     let outputs = UnsafeMutableAudioBufferListPointer(outOutputData)
 
     for index in 0..<outputs.count {
         guard let outData = outputs[index].mData else { continue }
         let outBytes = Int(outputs[index].mDataByteSize)
-        memset(outData, 0, outBytes)  // start from silence, so anything we don't copy over is quiet, not garbage
+        memset(outData, 0, outBytes)  // start from silence, so anything we don't write is quiet, not garbage
 
         if index < inputs.count, let inData = inputs[index].mData {
             let inBytes = Int(inputs[index].mDataByteSize)
-            memcpy(outData, inData, min(inBytes, outBytes))  // never write past the end of the output
+            let channels = Int(inputs[index].mNumberChannels)              // 2: samples go L, R, L, R…
+            let frames = min(inBytes, outBytes) / MemoryLayout<Float>.size / channels  // bytes → samples → frames
+            let inSamples = inData.assumingMemoryBound(to: Float.self)    // safe: the format guard checked
+            let outSamples = outData.assumingMemoryBound(to: Float.self)
+            for frame in 0..<frames {
+                let gain = ramp.nextGain(ducked: isDucked)                 // one gain per frame…
+                for channel in 0..<channels {                              // …applied to L and R alike
+                    let i = frame * channels + channel                     // position in the flat L, R, L, R… list
+                    outSamples[i] = inSamples[i] * gain
+                }
+            }
         }
     }
 }
@@ -253,7 +283,6 @@ print("ducker: device started; audio is flowing through the callback")
 
 /// Stops the aggregate device, unregisters the callback, destroys the aggregate device, and destroys the tap.
 func tearDown(aggregateID: AudioDeviceID, ioProc: AudioDeviceIOProcID, tapID: AudioObjectID) {
-
     let stopStatus = AudioDeviceStop(aggregateID, ioProc)
     print(stopStatus == 0 ? "ducker: device stopped" : "ducker: stopping device failed: \(describe(stopStatus))")
     let unregisterStatus = AudioDeviceDestroyIOProcID(aggregateID, ioProc)
@@ -264,7 +293,6 @@ func tearDown(aggregateID: AudioDeviceID, ioProc: AudioDeviceIOProcID, tapID: Au
                                     : "ducker: destroying aggregate device failed: \(describe(aggregateDestroyStatus))")
     let destroyStatus = AudioHardwareDestroyProcessTap(tapID)
     print(destroyStatus == 0 ? "ducker: tap destroyed" : "ducker: destroying tap failed: \(describe(destroyStatus))")
-
 }
 
 signal(SIGINT, SIG_IGN)     // ignore ctrl-c for this program; DispatchSourceSignal will handle it instead
@@ -276,13 +304,26 @@ sigint.setEventHandler(handler: {
 })
 sigint.resume()              // start listening for ctrl-c; when it happens, tearDown() will run
 
-signal(SIGTERM, SIG_IGN)    // ignore kill for this program; DispatchSourceSignal will handle it instead
+signal(SIGTERM, SIG_IGN)    // skip the default quit-at-once on SIGTERM (`kill`); DispatchSourceSignal will handle it instead
 let sigterm: any DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler(handler: {
     print("ducker: SIGTERM received, tearing down")
     tearDown(aggregateID: aggregateID, ioProc: ioProc, tapID: tapID)
     exit(0)
 })
-sigterm.resume()             // start listening for SIGTERM; when it happens, tearDown()
+sigterm.resume()             // start listening for SIGTERM; when it happens, tearDown() will run
 
-RunLoop.main.run()              // never returns; the callback keeps running until the process exits
+// MARK: - Test trigger (temporary: milestone 4 replaces it with duck/release commands over the socket)
+
+DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+    print("ducker: duck")
+    ducked.store(true, ordering: .relaxed)
+}
+DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+    print("ducker: release")
+    ducked.store(false, ordering: .relaxed)
+}
+
+// Keep the main thread alive to run the signal handlers and the test trigger. Never returns; the callback keeps
+// running on its own thread until the process exits.
+RunLoop.main.run()
