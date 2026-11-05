@@ -2,7 +2,17 @@ import CoreAudio
 import Foundation
 import Synchronization // for Atomic
 
-print("ducker: starting on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+/// Writes a log line to stderr. stdout is reserved for replies to JARVIS, so a log line can't be mistaken for one.
+func log(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+}
+
+/// Writes a reply to JARVIS on stdout. FileHandle writes straight to the pipe (no buffer), so it arrives at once.
+func reply(_ message: String) {
+    FileHandle.standardOutput.write(Data((message + "\n").utf8))
+}
+
+log("ducker: starting on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 
 // MARK: - Core Audio helpers
 // Core Audio is a C API: everything is an audio object with a numeric ID, and you ask an object questions by
@@ -42,7 +52,7 @@ func processObject(forPID pid: pid_t) -> AudioObjectID? {
         &size, &object                              // Where to put the answer and it's size
     )
     guard status == 0 else {  // 0 = noErr
-        print("ducker: translating PID \(pid) failed: \(describe(status))")
+        log("ducker: translating PID \(pid) failed: \(describe(status))")
         return nil
     }
     return object
@@ -116,64 +126,101 @@ func deviceUID(of device: AudioDeviceID) -> String? {
     return value?.takeRetainedValue() as String?  // a copy, like bundleID(of:); we take ownership
 }
 
+// MARK: - Arguments
 
+// --exclude-pid <PID>: another process to leave out of the tap (JARVIS, so its voice stays full volume).
+// --duck-db <dB>: how far to duck. Both optional, so a bare `swift run` still works.
+var excludePID: Int32? = nil
+var duckDB: Float = -20
+
+var arguments = CommandLine.arguments.dropFirst()   // [0] is the program's own path
+while let flag = arguments.popFirst() {
+    switch flag {
+    case "--exclude-pid":
+        guard let text = arguments.popFirst(), let value = Int32(text) else {
+            log("ducker: --exclude-pid needs a process ID")
+            exit(2)
+        }
+        excludePID = value
+    case "--duck-db":
+        guard let text = arguments.popFirst(), let value = Float(text), value < 0 else {
+            log("ducker: --duck-db needs a negative number, e.g. -20")
+            exit(2)
+        }
+        duckDB = value
+    default:
+        log("ducker: unknown argument \(flag)")
+        exit(2)
+    }
+}
 
 // MARK: - Piece 1: who am I?
 
 let myPID: Int32 = ProcessInfo.processInfo.processIdentifier
-print("ducker: my PID is \(myPID)")
+log("ducker: my PID is \(myPID)")
 
 // The tap must exclude us (piece 2), so without our own process object there's no point continuing.
 guard let me: AudioObjectID = processObject(forPID: myPID), me != AudioObjectID(kAudioObjectUnknown) else {
-    print("ducker: Core Audio has no process object for me, so I can't exclude myself from a tap")
+    log("ducker: Core Audio has no process object for me, so I can't exclude myself from a tap")
     exit(1)
 }
-print("ducker: my Core Audio process object is \(me)")
+log("ducker: my Core Audio process object is \(me)")
 
-// Everything Core Audio can see; the tap in piece 2 will catch all of these except us (and later JARVIS).
+// Everyone the tap leaves out: us (or we'd capture our own output) and, if given, JARVIS (so its voice isn't ducked).
+var excluded: [AudioObjectID] = [me]
+if let excludePID {
+    guard let other = processObject(forPID: excludePID), other != AudioObjectID(kAudioObjectUnknown) else {
+        log("ducker: Core Audio has no process object for PID \(excludePID), so I can't exclude it")
+        exit(1)
+    }
+    excluded.append(other)
+    log("ducker: also excluding PID \(excludePID) (process object \(other))")
+}
+
+// Everything Core Audio can see; the tap in piece 2 will catch all of these except the excluded ones.
 let processes = allProcessObjects()
-print("ducker: Core Audio knows \(processes.count) processes:")
+log("ducker: Core Audio knows \(processes.count) processes:")
 for process in processes {
     let name = bundleID(of: process) ?? "(no bundle ID)"
     let pidText = pid(of: process).map(String.init) ?? "?"
-    print("  object \(process)  pid \(pidText)  \(name)\(isPlaying(process) ? "  ← playing" : "")")
+    log("  object \(process)  pid \(pidText)  \(name)\(isPlaying(process) ? "  ← playing" : "")")
 }
 
 // MARK: - Piece 2: create the tap
 
-// Step 1: describe the tap. Everything except us, mixed down to stereo. The originals are muted only while
-// something reads the tap (piece 4), so you hear our copy instead of both.
-let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [me])
+// Step 1: describe the tap. Everything except the excluded processes, mixed down to stereo. The originals are muted
+// only while something reads the tap (piece 4), so you hear our copy instead of both.
+let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
 description.name = "ducker"
 description.isPrivate = true  // only this process can see the tap
 description.muteBehavior = .mutedWhenTapped
-print("ducker: tap description ready, uuid \(description.uuid)")
+log("ducker: tap description ready, uuid \(description.uuid)")
 
 // Step 2: submit the description. Core Audio creates the tap and writes its object ID into tapID.
 var tapID: AudioObjectID = AudioObjectID(kAudioObjectUnknown)
 let status: OSStatus = AudioHardwareCreateProcessTap(description, &tapID)
 guard status == 0 else {
-    print("ducker: failed to create tap: \(describe(status))")
+    log("ducker: failed to create tap: \(describe(status))")
     exit(1)
 }
 
-print("ducker: tap created, tapID: \(tapID)")
+log("ducker: tap created, tapID: \(tapID)")
 
 // Step 3: ask the tap what its audio looks like. The callback (piece 4) has to handle exactly this format.
 guard let format: AudioStreamBasicDescription = tapFormat(of: tapID) else {
-    print("ducker: couldn't read the tap's format")
+    log("ducker: couldn't read the tap's format")
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
 let isFloat = format.mFormatFlags & kAudioFormatFlagIsFloat != 0
 let isInterleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0 // means L and R are in one buffer, not split into separate buffers
-print("ducker: tap format: \(format.mSampleRate) Hz, \(format.mChannelsPerFrame) channels, " +
+log("ducker: tap format: \(format.mSampleRate) Hz, \(format.mChannelsPerFrame) channels, " +
       "\(format.mBitsPerChannel) bits, float: \(isFloat), interleaved: \(isInterleaved)")
 
 // The callback treats every 4 bytes as one Float sample, so anything else would come out as noise. It also expects
 // L and R in one buffer (L, R, L, R…); split into separate buffers, the ramp would advance once per buffer.
 guard isFloat, format.mBitsPerChannel == 32, isInterleaved else {
-    print("ducker: expected interleaved 32-bit float samples; can't process this format")
+    log("ducker: expected interleaved 32-bit float samples; can't process this format")
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
@@ -182,11 +229,11 @@ guard isFloat, format.mBitsPerChannel == 32, isInterleaved else {
 
 // Step 1: find the output device the system is playing through, and its UID (the aggregate's dictionary needs the UID).
 guard let outputDevice = defaultOutputDevice(), let outputUID = deviceUID(of: outputDevice) else {
-    print("ducker: couldn't find the default output device")
+    log("ducker: couldn't find the default output device")
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
-print("ducker: output device \(outputDevice), uid \(outputUID)")
+log("ducker: output device \(outputDevice), uid \(outputUID)")
 
 // Step 2: describe the aggregate device as a dictionary: the tap as its input, the output device as its output and its clock.
 let aggregateDescription: [String: Any] = [
@@ -208,18 +255,17 @@ let aggregateDescription: [String: Any] = [
 var aggregateID = AudioObjectID(kAudioObjectUnknown)
 let aggregateStatus = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregateID)
 guard aggregateStatus == 0 else {
-    print("ducker: failed to create aggregate device: \(describe(aggregateStatus))")
+    log("ducker: failed to create aggregate device: \(describe(aggregateStatus))")
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
-print("ducker: aggregate device created, aggregateID: \(aggregateID)")
+log("ducker: aggregate device created, aggregateID: \(aggregateID)")
 
 // MARK: - Piece 4: callback + start
 
-// How far to duck, relative to what's playing: −20 dB = one tenth of the amplitude. 10^(dB/20) turns decibels into
-// the number each sample is multiplied by. (Milestone 4 makes this the --duck-db option.)
-let duckDB: Float = -20
-print("ducker: duck depth \(duckDB) dB")
+// How far to duck (--duck-db), relative to what's playing: −20 dB = one tenth of the amplitude. 10^(dB/20) turns
+// decibels into the number each sample is multiplied by; the ramp does that conversion.
+log("ducker: duck depth \(duckDB) dB")
 
 // This flag is for whether we should be ducked or not
 let ducked = Atomic<Bool>(false)        // `let` because it's changed with store(), never replaced
@@ -260,45 +306,45 @@ let ioBlock: AudioDeviceIOBlock = { _, inInputData, _, outOutputData, _ in
 var procID: AudioDeviceIOProcID? = nil
 let procStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil, ioBlock)
 guard procStatus == 0, let ioProc = procID else {
-    print("ducker: failed to register the callback: \(describe(procStatus))")
+    log("ducker: failed to register the callback: \(describe(procStatus))")
     AudioHardwareDestroyAggregateDevice(aggregateID)
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
-print("ducker: callback registered")
+log("ducker: callback registered")
 
 // Step 3: start the device. From here its clock ticks and Core Audio calls ioBlock every few milliseconds.
 // The tap auto-starts with it, and the originals are now muted, so what you hear is our copy.
 let startStatus = AudioDeviceStart(aggregateID, ioProc)
 guard startStatus == 0 else {
-    print("ducker: failed to start the device: \(describe(startStatus))")
+    log("ducker: failed to start the device: \(describe(startStatus))")
     AudioDeviceDestroyIOProcID(aggregateID, ioProc)
     AudioHardwareDestroyAggregateDevice(aggregateID)
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
-print("ducker: device started; audio is flowing through the callback")
+log("ducker: device started; audio is flowing through the callback")
 
 // MARK: - Cleanup
 
 /// Stops the aggregate device, unregisters the callback, destroys the aggregate device, and destroys the tap.
 func tearDown(aggregateID: AudioDeviceID, ioProc: AudioDeviceIOProcID, tapID: AudioObjectID) {
     let stopStatus = AudioDeviceStop(aggregateID, ioProc)
-    print(stopStatus == 0 ? "ducker: device stopped" : "ducker: stopping device failed: \(describe(stopStatus))")
+    log(stopStatus == 0 ? "ducker: device stopped" : "ducker: stopping device failed: \(describe(stopStatus))")
     let unregisterStatus = AudioDeviceDestroyIOProcID(aggregateID, ioProc)
-    print(unregisterStatus == 0 ? "ducker: callback unregistered"
+    log(unregisterStatus == 0 ? "ducker: callback unregistered"
                                 : "ducker: unregistering callback failed: \(describe(unregisterStatus))")
     let aggregateDestroyStatus = AudioHardwareDestroyAggregateDevice(aggregateID)
-    print(aggregateDestroyStatus == 0 ? "ducker: aggregate device destroyed"
+    log(aggregateDestroyStatus == 0 ? "ducker: aggregate device destroyed"
                                     : "ducker: destroying aggregate device failed: \(describe(aggregateDestroyStatus))")
     let destroyStatus = AudioHardwareDestroyProcessTap(tapID)
-    print(destroyStatus == 0 ? "ducker: tap destroyed" : "ducker: destroying tap failed: \(describe(destroyStatus))")
+    log(destroyStatus == 0 ? "ducker: tap destroyed" : "ducker: destroying tap failed: \(describe(destroyStatus))")
 }
 
 signal(SIGINT, SIG_IGN)     // ignore ctrl-c for this program; DispatchSourceSignal will handle it instead
 let sigint: any DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
 sigint.setEventHandler(handler: {
-    print("ducker: ctrl-c received, tearing down")
+    log("ducker: ctrl-c received, tearing down")
     tearDown(aggregateID: aggregateID, ioProc: ioProc, tapID: tapID)
     exit(0)
 })
@@ -307,23 +353,45 @@ sigint.resume()              // start listening for ctrl-c; when it happens, tea
 signal(SIGTERM, SIG_IGN)    // skip the default quit-at-once on SIGTERM (`kill`); DispatchSourceSignal will handle it instead
 let sigterm: any DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler(handler: {
-    print("ducker: SIGTERM received, tearing down")
+    log("ducker: SIGTERM received, tearing down")
     tearDown(aggregateID: aggregateID, ioProc: ioProc, tapID: tapID)
     exit(0)
 })
 sigterm.resume()             // start listening for SIGTERM; when it happens, tearDown() will run
 
-// MARK: - Test trigger (temporary: milestone 4 replaces it with duck/release commands over the socket)
+// MARK: - Commands
 
-DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-    print("ducker: duck")
-    ducked.store(true, ordering: .relaxed)
-}
-DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-    print("ducker: release")
-    ducked.store(false, ordering: .relaxed)
+// Reads one command per line from stdin (JARVIS, or you typing in the terminal) and answers each with exactly one
+// line on stdout. readLine() waits until a whole line arrives, so this runs on its own thread, not the main one.
+let commandThread = Thread {
+    while let line = readLine() {
+        let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch command {
+        case "duck":
+            ducked.store(true, ordering: .relaxed)
+            reply("ok")
+        case "release":
+            ducked.store(false, ordering: .relaxed)
+            reply("ok")
+        case "status":
+            reply(ducked.load(ordering: .relaxed) ? "ducked" : "released")
+        default:
+            reply("error unknown command: \(command)")
+        }
+    }
+
+    // readLine() returned nil: stdin closed (JARVIS exited or crashed, or Ctrl-D in the terminal). Send ourselves a
+    // SIGTERM rather than tearing down here: its handler does it on the main thread, so a real SIGTERM at the same
+    // moment can't tear down twice, and this thread never touches the Core Audio IDs.
+    log("ducker: stdin closed")
+    kill(getpid(), SIGTERM)
 }
 
-// Keep the main thread alive to run the signal handlers and the test trigger. Never returns; the callback keeps
-// running on its own thread until the process exits.
+// Setup succeeded: tell JARVIS it can send commands. Every failure above exits with a reason on stderr instead,
+// so JARVIS either reads `ready` or sees the helper exit without it.
+reply("ready")
+commandThread.start()   // after `ready`, so no reply can arrive before it
+
+// Keep the main thread alive to run the signal handlers and the end-of-input tear-down. Never returns; the callback
+// and the command thread keep running on their own threads until the process exits.
 RunLoop.main.run()

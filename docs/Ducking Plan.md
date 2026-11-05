@@ -11,7 +11,7 @@ writes each piece, Claude explains it first and reviews it afterwards.
 ```
 JARVIS (Python) ──launches──▶ ducker (Swift)
       │                          │
-      └── "duck" / "release" ──▶ │  Unix socket
+      └── "duck" / "release" ──▶ │  stdin (replies on stdout)
                                  │
    Spotify, Safari, … ──▶ process tap ──▶ aggregate device ──▶ our callback (× gain) ──▶ speakers
    JARVIS + ducker   ──────────────────────────────────────────────────────────────────▶ speakers
@@ -38,7 +38,7 @@ JARVIS (Python) ──launches──▶ ducker (Swift)
 | How much | −20 dB by default |
 | Ramp | About 200 ms down, about 800 ms back up, in dB with a smoothstep (eased) curve |
 | Tap lifetime | Always on while the helper runs: created at start-up, destroyed at exit. Ducking only changes the gain. On demand (create per command) left a short but noticeable gap at every handover between the original audio and our copy |
-| Control | JARVIS launches the helper with `subprocess`, passes its PID, sends `duck` / `release` / `status` over a Unix socket |
+| Control | JARVIS launches the helper with `subprocess`, passes its PID, and sends `duck` / `release` / `status` as lines on the helper's stdin; replies come back on stdout. Chosen over a Unix socket: no socket file to manage, and stdin closing tells the helper JARVIS is gone. Only JARVIS ever controls it |
 | Layout | Swift package in `helpers/ducker/`, release build copied to `bin/`, Python client in `src/_ducking.py` |
 
 ## Milestone 1: proof program
@@ -128,20 +128,38 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
 - [x] Temporary test trigger: duck after 3 s, release after 6 s (`DispatchQueue.main.asyncAfter`).
 - [x] Done when: the fade sounds smooth, with no clicks or jumps.
 
-## Milestone 4: control socket
+## Milestone 4: control pipe
 
-- [ ] Command-line arguments: `--exclude-pid <JARVIS PID>`, `--socket <path>`, optional `--duck-db`.
-- [ ] Unix socket server: accept `duck`, `release`, `status`; reply `ok` / `error <reason>` / current state.
-- [ ] Set up the tap, aggregate device and callback once at start-up; `duck` / `release` only set the
-  target gain. If setup fails, exit with an error so JARVIS can log it and carry on without ducking.
-- [ ] Graceful shutdown on SIGINT/SIGTERM: release, tear down, remove the socket file.
-- [ ] Exit if JARVIS dies (watch the parent PID), so the helper never outlives it.
-- [ ] Done when: `duck` / `release` sent by hand (e.g. with `nc -U`) work repeatedly.
+- [x] **Step 1: arguments.** `--exclude-pid <JARVIS PID>` (added to the tap's exclude list next to our
+  own process) and `--duck-db <dB>`. Defaults (exclude no one else, −20 dB) keep `swift run` working.
+  Result: Core Audio only knows a process once it has connected to the audio system (any audio API
+  call), not only once it plays. Mail (never used audio) had no process object; Safari (silent, but
+  connected) did. So JARVIS must initialise its audio before launching the helper (milestone 5).
+  Tested with JARVIS idle at the wake word: its Python process was found and excluded; the `uv run`
+  launcher above it was not (it never touches audio), so pass the Python PID (`os.getpid()`).
+- [x] **Step 2: logs to stderr.** stdout carries only replies, so JARVIS never reads a log line as one.
+  `log()` writes through `FileHandle.standardError` (C's `stderr` is a global var Swift 6 flags).
+- [x] **Step 3: `ready`.** Printed on stdout once setup succeeds. If setup fails, exit with an error on
+  stderr so JARVIS can log it and carry on without ducking (exit code 1 = setup, 2 = bad arguments).
+- [x] **Step 4: command loop.** A dedicated `Thread` reads stdin with `readLine()`: `duck` / `release`
+  set the flag and reply `ok`; `status` replies `ducked` / `released` (the flag, not the fade);
+  anything else replies `error <reason>`. Every line in gets exactly one line out. Replies go through
+  `reply()` (`FileHandle.standardOutput`), which writes straight to the pipe, so no `fflush(stdout)` is
+  needed. The thread starts after `ready`, so no reply can come before it.
+- [x] **Step 5: end of input = shut down.** `readLine()` returning `nil` (JARVIS exited or crashed, or
+  Ctrl-D in the terminal) makes the helper send itself SIGTERM; the existing handler tears down on the
+  main thread. One tear-down path for all exits, and the command thread never touches the Core Audio IDs
+  (Swift 6 rejected sending `ioProc` across threads).
+- [x] **Step 6:** removed the test trigger.
+- [x] Done when: typing `duck` / `release` / `status` into `swift run` works repeatedly, and Ctrl-D
+  exits cleanly. Also works piped: `printf 'status\nduck\n…' | swift run ducker 2> /dev/null`.
 
 ## Milestone 5: Python client and JARVIS integration
 
-- [ ] `src/_ducking.py`: launch `bin/ducker` with JARVIS's PID, connect to the socket, `duck()` /
-  `release()` functions with short timeouts.
+- [ ] `src/_ducking.py`: launch `bin/ducker` with JARVIS's PID (`stdin`/`stdout` as pipes), wait for
+  `ready`, `duck()` / `release()` functions that write a line and read the reply with a short timeout.
+  Launch it only after JARVIS's audio is set up (so Core Audio knows JARVIS's process), and pass the
+  PID of the process that actually plays the voice (if TTS ever plays from a child process, that one).
 - [ ] If the helper is missing or crashes: log a warning and carry on without ducking. Ducking must
   never stop JARVIS from working.
 - [ ] Hook it into the state machine: duck at the wake word, release after speaking (or straight
