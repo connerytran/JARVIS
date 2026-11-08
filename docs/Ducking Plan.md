@@ -156,16 +156,25 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
 
 ## Milestone 5: Python client and JARVIS integration
 
-- [ ] `src/_ducking.py`: launch `bin/ducker` with JARVIS's PID (`stdin`/`stdout` as pipes), wait for
+- [x] `src/_ducking.py`: launch `bin/ducker` with JARVIS's PID (`stdin`/`stdout` as pipes), wait for
   `ready`, `duck()` / `release()` functions that write a line and read the reply with a short timeout.
   Launch it only after JARVIS's audio is set up (so Core Audio knows JARVIS's process), and pass the
   PID of the process that actually plays the voice (if TTS ever plays from a child process, that one).
-- [ ] If the helper is missing or crashes: log a warning and carry on without ducking. Ducking must
-  never stop JARVIS from working.
-- [ ] Hook it into the state machine: duck at the wake word, release after speaking (or straight
-  away when there's nothing to say).
-- [ ] Shut the helper down cleanly when JARVIS exits (including Ctrl-C).
-- [ ] Done when: a full voice command over playing music ducks and recovers, several times in a row.
+  - Each read waits with `select.select` first (5 s for `ready`, 0.5 s for a reply), so a hung helper
+    can't freeze JARVIS. `bufsize=1` sends each command line immediately.
+  - Tested from a bare Python process: without `import sounddevice` it has no process object (like Mail),
+    and `start()` takes the failure path cleanly.
+- [x] If the helper is missing or crashes: log a warning and carry on without ducking. Ducking must
+  never stop JARVIS from working. An `error …` reply only warns; no reply or a broken pipe turns
+  ducking off and stops the helper (a late reply would put every later reply one step behind).
+- [x] Hook it into the state machine: `start()` in `__init__` before `super().__init__()` (which enters
+  idle and never returns), `duck()` at the top of `on_enter_listening` (repeats on follow-ups are
+  no-ops), `release()` at the top of `on_enter_idle` (after speaking, or straight after no speech).
+- [x] Shut the helper down cleanly when JARVIS exits (including Ctrl-C): `atexit` closes its stdin and
+  waits up to 2 s (then kills it), so its tear-down finishes before JARVIS exits.
+- [x] Done when: a full voice command over playing music ducks and recovers, several times in a row.
+  Also tested: no speech, follow-up, missing helper (one warning, JARVIS unaffected), Ctrl-C, and
+  wake-word-to-listening timing unchanged.
 
 ## Milestone 6: robustness
 
@@ -189,10 +198,30 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
 
 ## Milestone 7: ship it
 
-- [ ] Release build (`swift build -c release`) copied to `bin/ducker`, with a short script or
-  documented command for rebuilding.
+- [x] Release build copied to `bin/ducker` (brought forward to milestone 5, so `_ducking.py` points
+  there from the start). Rebuild command under "Commands to remember".
 - [ ] Setup notes: building the helper, the audio-capture permission prompt.
 - [ ] Tick ROADMAP Phase 1, step 8 and commit on `mac-port`.
+
+## Later improvements
+
+- Pipe the helper's stderr into Python's `logging`: a reader thread in `_ducking.py` turns each
+  `ducker:` line into a `logger.info(...)` call, so it matches JARVIS's log format. For now stderr is
+  inherited, so the lines print raw in JARVIS's terminal.
+- Trim the helper's ~12 start-up log lines to one summary line (e.g. `ducker: ready (excluding PID …, -20 dB)`).
+
+## Commands to remember
+
+All from the repo root.
+
+| What | Command |
+| --- | --- |
+| Rebuild the helper after any Swift change (JARVIS runs `bin/ducker`, not the source) | `cd helpers/ducker && swift build -c release && cp .build/release/ducker ../../bin/` |
+| Run the helper during development (logs and replies) | `cd helpers/ducker && swift run ducker` |
+| Only replies (hide logs) / only logs (hide replies) | append `2> /dev/null` / `> /dev/null` |
+| Send a scripted set of commands, then end input | `printf 'status\nduck\nrelease\n' \| bin/ducker` |
+| Exclude a running app (e.g. to test exclusion) | `bin/ducker --exclude-pid $(pgrep -x Spotify)` |
+| Find JARVIS's Python PID (not the `uv run` one) | `pgrep -fl jarvis.py` |
 
 ## Open questions
 

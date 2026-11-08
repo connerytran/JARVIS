@@ -58,37 +58,8 @@ func processObject(forPID pid: pid_t) -> AudioObjectID? {
     return object
 }
 
-/// Every process Core Audio currently knows about. The list's length isn't known up front, so: ask for its
-/// size in bytes, make an array that big, then read into it.
-func allProcessObjects() -> [AudioObjectID] {
-    var address = propertyAddress(kAudioHardwarePropertyProcessObjectList)
-    var size: UInt32 = 0
-    guard AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size) == 0 else { return [] }
-    var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-    guard AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &objects) == 0 else { return [] }
-    return objects
-}
-
-/// The PID behind a process object.
-func pid(of process: AudioObjectID) -> pid_t? {
-    var address = propertyAddress(kAudioProcessPropertyPID)
-    var pid: pid_t = -1
-    var size = UInt32(MemoryLayout<pid_t>.size)
-    return AudioObjectGetPropertyData(process, &address, 0, nil, &size, &pid) == 0 ? pid : nil
-}
-
-
-/// The app identifier (e.g. com.spotify.client), or nil for processes that don't have one (command-line tools).
-func bundleID(of process: AudioObjectID) -> String? {
-    var address: AudioObjectPropertyAddress = propertyAddress(kAudioProcessPropertyBundleID)
-    var value: Unmanaged<CFString>? = nil
-    var size: UInt32 = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-    guard AudioObjectGetPropertyData(process, &address, 0, nil, &size, &value) == 0 else { return nil }
-    let id: String? = value?.takeRetainedValue() as String?  // Core Audio hands over a copy; we take ownership of it
-    return id?.isEmpty == false ? id : nil
-}
-
 /// Whether the process is currently sending audio to an output device (i.e. playing something).
+/// Unused for now; kept for milestone 6's optional "stop the device while nothing is playing".
 func isPlaying(_ process: AudioObjectID) -> Bool {
     var address: AudioObjectPropertyAddress = propertyAddress(kAudioProcessPropertyIsRunningOutput)
     var running: UInt32 = 0
@@ -123,7 +94,7 @@ func deviceUID(of device: AudioDeviceID) -> String? {
     var value: Unmanaged<CFString>? = nil
     var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
     guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == 0 else { return nil }
-    return value?.takeRetainedValue() as String?  // a copy, like bundleID(of:); we take ownership
+    return value?.takeRetainedValue() as String?  // Core Audio hands over a copy; we take ownership of it
 }
 
 // MARK: - Arguments
@@ -175,15 +146,6 @@ if let excludePID {
     }
     excluded.append(other)
     log("ducker: also excluding PID \(excludePID) (process object \(other))")
-}
-
-// Everything Core Audio can see; the tap in piece 2 will catch all of these except the excluded ones.
-let processes = allProcessObjects()
-log("ducker: Core Audio knows \(processes.count) processes:")
-for process in processes {
-    let name = bundleID(of: process) ?? "(no bundle ID)"
-    let pidText = pid(of: process).map(String.init) ?? "?"
-    log("  object \(process)  pid \(pidText)  \(name)\(isPlaying(process) ? "  ← playing" : "")")
 }
 
 // MARK: - Piece 2: create the tap
