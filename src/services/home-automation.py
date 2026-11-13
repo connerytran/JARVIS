@@ -5,6 +5,7 @@ import os
 import yaml
 
 load_dotenv()
+HA_URL = os.getenv("HA_URL")  # e.g. http://<mac mini LAN IP>:8123 -- reserve that IP in the router so it doesn't change
 HA_TOKEN = os.getenv("HA_TOKEN")
 HEADERS = {"Authorization": f"Bearer {HA_TOKEN}"}
 
@@ -25,7 +26,7 @@ def control_light(device_name: str, brightness: int = None, color: str = None, t
         entity_id = HA_CONFIG['lights'].get(device_name)
         color_name = HA_CONFIG['colors'].get(color)
         color_temp = HA_CONFIG['color_temps'].get(temp)
-        url = f"http://localhost:8123/api/services/light/turn_on"
+        url = f"{HA_URL}/api/services/light/turn_on"
         data = {"entity_id": entity_id}
         if color_name:
             data["color_name"] = color_name

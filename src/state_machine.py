@@ -4,6 +4,7 @@ from services import TOOL_MAP, TOOLS
 from prompts import load
 from audio import listen, speak, wake_word
 from ollama import chat, ChatResponse
+import _ducking
 
 import logging
 
@@ -30,9 +31,9 @@ class JarvisMachine(StateMachine):
 
     def __init__(self):
         self.messages = [{'role': 'system', 'content': load('jarvis-prompt')}]
-        self.volumes = {}
         self.response = None        
         self.follow_up_flag = False
+        _ducking.start()  
         super().__init__()
 
 
@@ -40,6 +41,7 @@ class JarvisMachine(StateMachine):
 
     # ------------- Idle State --------------
     def on_enter_idle(self):
+        _ducking.release()
         logger.info("Entering Idle state. Waiting for wake word...")
         self._wait_for_wake_word()          # This function should block until the wake word is detected
         self.wake_word_detected()           # Transition to listening state 
@@ -49,7 +51,7 @@ class JarvisMachine(StateMachine):
 
     # ------------- Listening State --------------
     def on_enter_listening(self):
-        
+        _ducking.duck()
         user_speech = listen()
         if user_speech['role'] == 'system':
             logger.info(f"System: {user_speech['content']}")
@@ -70,7 +72,7 @@ class JarvisMachine(StateMachine):
                 messages=self.messages,
                 tools=TOOLS,
             )
-        except BaseException:
+        except Exception:  # not BaseException: a Ctrl-C here isn't an error, let it reach main() quietly
             logger.exception("Error in thinking state")
             raise
 

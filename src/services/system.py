@@ -1,34 +1,32 @@
 
-from ctypes import cast, POINTER # python stdlib for interacting with C lvl code and windows APIs
-from comtypes import CLSCTX_ALL # COM (component object model) controls windows audio
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+from _macos import osascript
 
-_speakers = AudioUtilities.GetSpeakers()        # aquires the default audio device (speakers) on the system
-_audio_interface = _speakers._dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)  # activates volume control interface on that device using COM interface iid
-_volume = cast(_audio_interface, POINTER(IAudioEndpointVolume))                     # Activate returns a generic COM object, so we must cast to IAudioEndpointVolume to access volume control methods
+
 
 def set_volume(volume: int) -> dict:
-    """Set the system volume on the PC.
+    """Set the system volume on the device.
     Args:
       volume: The volume level to set (0-100)
     """
-
-    try: 
-        _volume.SetMasterVolumeLevelScalar(volume / 100, None)
+    try:
+        volume = max(0, min(100, int(volume)))  # int() also guarantees only a number reaches the script
+        osascript(f"set volume output volume {volume}" + (" without output muted" if volume > 0 else ""))  # unmute too, or "volume to 50" stays silent
         return {"status": "success", "message": f"System volume set to {volume}%."}
     except Exception as e:
-        return {"status": "error", "message": f"Failed to set system volume: {str(e)}"}
-    
+        return {"status": "error", "message": f"Failed to set system volume: {e}"}
+
 
 
 def get_volume() -> dict:
-    """Get the current system volume on the PC."""
+    """Get the current system volume on the device."""
     try:
-        current_volume = int(_volume.GetMasterVolumeLevelScalar() * 100)
-        return {"status": "success", "volume": current_volume, "message": f"Current system volume is {current_volume}%."}
+        output = osascript("output volume of (get volume settings)")
+        if output == "missing value":  # devices that handle their own volume (some HDMI / USB DACs) don't report one
+            return {"status": "error", "message": "The current output device doesn't report a volume."}
+        return {"status": "success", "volume": int(output), "message": f"Current system volume is {output}%."}
     except Exception as e:
-        return {"status": "error", "message": f"Failed to get system volume: {str(e)}"}
-    
-    
+        return {"status": "error", "message": f"Failed to get system volume: {e}"}
+
+
 
 TOOLS = [set_volume, get_volume]
