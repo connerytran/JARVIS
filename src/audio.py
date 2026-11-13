@@ -1,5 +1,8 @@
 
 import os
+import queue
+import time
+from contextlib import closing
 from pathlib import Path
 
 # transformers (used by mlx-audio's Whisper tokenizer) resets its own log level when it's first imported, so
@@ -38,11 +41,43 @@ OPEN_WAKE_WORD = openwakeword.Model(
 
 
 
+FIRST_CHUNK_TIMEOUT = 3.0   # seconds to wait for audio after opening; Bluetooth mics (AirPods) can take 1–2 s to start
+DEVICE_TIMEOUT = 0.25       # seconds without audio, once it's flowing, before we treat the device as gone (measured: gaps stay within ~7 ms of the 32–80 ms chunk interval)
+
+
+def _refresh_devices():
+    """Makes PortAudio re-read the system's audio devices, so new streams open on the current defaults.
+    PortAudio otherwise keeps the list from start-up. No stream may be open while this runs."""
+    sd._terminate()
+    sd._initialize()
+
+
+def _mic_chunks(sample_rate, chunk_size):
+    """Yields mic chunks (int16 numpy arrays) forever from the default input. If the device stops delivering
+    (unplugged) or can't be opened, reopens on whatever the default input is now, so callers never hang."""
+    while True:
+        _refresh_devices()
+        chunks = queue.Queue()
+
+        def on_audio(indata, frames, time_info, status):   # PortAudio calls this on its own thread with each chunk
+            chunks.put(indata[:, 0].copy())                # copy: PortAudio reuses indata's memory after we return
+
+        try:
+            with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', blocksize=chunk_size, callback=on_audio):
+                yield chunks.get(timeout=FIRST_CHUNK_TIMEOUT)   # the first chunk can be slow
+                while True:
+                    yield chunks.get(timeout=DEVICE_TIMEOUT)
+        except queue.Empty:
+            logger.warning("Microphone stopped sending audio (unplugged?). Reopening on the current default input.")
+        except sd.PortAudioError as e:
+            logger.warning(f"Couldn't open the microphone ({e}). Retrying in {FIRST_CHUNK_TIMEOUT:.0f} s.")
+            time.sleep(FIRST_CHUNK_TIMEOUT)   # no input device at all: don't spin
+
+
+
 def wake_word(sample_rate=16000, chunk_size=1280):
-    with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', blocksize=chunk_size) as stream:
-        while True:
-            chunk, _ = stream.read(chunk_size)
-            chunk = np.frombuffer(chunk, dtype=np.int16)
+    with closing(_mic_chunks(sample_rate, chunk_size)) as mic:
+        for chunk in mic:
             prediction = OPEN_WAKE_WORD.predict(chunk)
             if prediction[WAKE_WORD] > 0.85:
                 logger.info("Wake word detected.")
@@ -61,10 +96,9 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
     speech_started = False
 
     logger.info("Listening...")
-    with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', blocksize=chunk_size) as stream:
-        while True:
-            chunk, _ = stream.read(chunk_size)
-            chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0  # Normalize to [-1, 1] for VAD processing
+    with closing(_mic_chunks(sample_rate, chunk_size)) as mic:
+        for chunk in mic:
+            chunk = chunk.astype(np.float32) / 32768.0  # Normalize to [-1, 1] for VAD processing
             audio_buffer.append(chunk)
 
             event = vad_iterator(chunk)
@@ -93,10 +127,32 @@ def listen(sample_rate=16000, chunk_size=512) -> dict:
 
 
 
+SPEAK_MARGIN = 1.0   # seconds past a segment's length before we treat the speaker as gone
+
+
+def _play(audio, sample_rate) -> bool:
+    """Plays audio on the default output and waits until it finishes. Returns False if it didn't finish
+    within its length + SPEAK_MARGIN (the device has gone). The stream is closed either way."""
+    sd.play(audio, samplerate=sample_rate)
+    deadline = time.monotonic() + len(audio) / sample_rate + SPEAK_MARGIN
+    try:
+        while sd.get_stream().active:          # becomes False once the last sample has played
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.05)
+        return True
+    finally:
+        sd.stop()                              # stop and close; must be closed before the next refresh
+
+
 def speak(text: str, voice='bm_george', speed=1.0):
     if not text or not text.strip():
         return
+    _refresh_devices()                         # speak on the current default output; no stream is open here
     for result in TTS_MODEL.generate(text, voice=voice, speed=speed, lang_code='b'):
-        sd.play(np.array(result.audio), samplerate=result.sample_rate)
-        sd.wait()
+        audio = np.array(result.audio)
+        if not _play(audio, result.sample_rate):
+            logger.warning("Speaker stopped playing (unplugged?). Repeating on the current default output.")
+            _refresh_devices()
+            _play(audio, result.sample_rate)   # one retry; if that fails too, carry on rather than loop
 

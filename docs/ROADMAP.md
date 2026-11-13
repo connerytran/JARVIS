@@ -21,7 +21,7 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
       release, eased/decibel curve not linear), controlled from JARVIS over a local socket.
       System-wide volume ducking as a placeholder if this drags.
 
-  Work happens on the `mac-port` branch; merge to `main` once the port is complete (step 9).
+  Work happens on the `mac-port` branch; merge to `main` once the port is complete (step 10).
   The `windows` branch is a frozen snapshot of the last Windows-working state — no platform checks
   on `mac-port`, Windows code is replaced outright.
 
@@ -51,8 +51,23 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     over (`.tesla_token_cache.json`, `src/services/_tesla-addresses.yaml`). If the token ever goes
     stale, re-run `scripts/tesla_setup.py` (Tesla rotates the refresh token on every use).
     `prep_car` and `navigate_car` verified by voice.
-  - [ ] 8. Swift ducking helper (scope above) — gets its own plan when reached.
-  - [ ] 9. Merge `mac-port` to `main`.
+  - [x] 8. Swift ducking helper (scope above). Plan and progress: `docs/Ducking Plan.md`. Controlled
+    over stdin/stdout pipes rather than a socket; process taps need macOS 14.2+ (the helper targets 15).
+    Ducks while listening and speaking, follows output-device changes; robustness extras (safety
+    timeout, latency check, log tidying) deferred in the plan.
+  - [x] 9. Audio devices: survive device changes. `sounddevice` (PortAudio) snapshots the devices at
+    start-up, so JARVIS's mic and voice stay on the start-up defaults, and unplugging one mid-stream
+    (e.g. wired earbuds with a mic) hangs JARVIS: `stream.read()` waits forever on a device that's gone.
+    Fix in `audio.py`: callback streams with a read timeout to notice a dead device, then refresh
+    PortAudio's device list and reopen on the current default; refresh before each stream opens too.
+    Found while testing ducking (milestone 6, step 2); independent of the helper.
+    Done: an unplugged mic is noticed within 0.25 s (3 s for the first chunk, for Bluetooth start-up)
+    and reopened on the new default; a new device is picked up at the next stream open; replies play
+    on the current default output, with a deadline guard in place of `sd.wait()`.
+    Known issue: turning off a Bluetooth speaker while JARVIS is speaking crashes him (segfault in
+    native code, cause not pinned down: PortAudio itself or `sd.stop()` on the dead stream). Re-run
+    with `PYTHONFAULTHANDLER=1` to see where. Unplugging a wired mic and switching output devices are fine.
+  - [ ] 10. Merge `mac-port` to `main`.
 
 - [ ] **2. Test mode + baseline.** Instrumentation, so every later phase can be measured. Do this
       before anything changes the pipeline — it captures the "before" for the Phase 7 comparison.
@@ -125,6 +140,16 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
 
   - On-the-way navigation (Tesla Phase D — Routes API, sample points, search along route)
   - Multi-stop Tesla navigation (currently capped at 2 stops — see navigation investigation doc)
+  - Mic choice and following (after Phase 1 step 9). Two linked decisions, design them together:
+    - Bluetooth mics: while JARVIS has the AirPods mic open (almost always — the wake word listens
+      constantly), AirPods drop to call quality, so music on them sounds like a phone call. Option:
+      ignore Bluetooth mics, or pick the input in config.
+    - Switch mid-stream to a new default input (today JARVIS only switches when the mic dies, or at
+      the next stream open). Can't ask PortAudio (its device list is a start-up snapshot, and
+      refreshing closes all streams), so ask Core Audio directly: poll the default input ID via
+      `ctypes` (~every 0.5 s, between chunks) and reopen when it changes. Not via the ducker (its
+      stdout is one reply per command, and it would tie mic-following to ducking). Groundwork for
+      following Connery between rooms.
   - Mac Studio M5 Max purchase decision, informed by Phase 7 benchmarks
   - MCP servers for tools (optional — one server per domain: Spotify, Tesla, Home Assistant,
     system controls; purely an interop/sharing upgrade, not a performance one)
