@@ -178,37 +178,68 @@ it runs. All in `helpers/ducker/Sources/ducker/main.swift`; run with `swift run`
 
 ## Milestone 6: robustness
 
-- [ ] Output device changes at any time, not only mid-duck, since the tap is always on (headphones
-  plugged in, AirPods connect): rebuild the aggregate device on the new output
-  (`kAudioHardwarePropertyDefaultOutputDevice` listener).
-- [ ] Measure the delay the tap adds to other apps' audio: read `kAudioDevicePropertyBufferFrameSize`,
+Milestones 1–5 make ducking work; this one makes it survive an ordinary day. The tap is always on, so
+the helper sits in the path of every app's audio all the time: anything it gets wrong affects
+everything, not only JARVIS moments. In order:
+
+- [x] **Step 1: sample-rate test.** Set the output device to 44.1 kHz in Audio MIDI Setup and listen
+  through the helper. Does Core Audio resample the tap for us (fine), or do the input and output
+  buffers differ in size (our `min(inBytes, outBytes)` would cut audio: crackling)?
+  - Result: Core Audio resamples. The tap still reports 48000 Hz (its own mix rate), but the aggregate
+    device runs at the output device's rate and converts the tap's audio to it before our callback;
+    playback and fades sounded clean at 44.1 kHz. So step 2 needs no special handling for rate changes.
+  - Side effect, accepted: the ramp's steps come from the tap's 48000, so at 44.1 kHz fades run about
+    9% slow (duck ~218 ms, release ~870 ms). Inaudible. Exact fix if ever wanted: build the ramp from
+    the aggregate device's `kAudioDevicePropertyNominalSampleRate`, and update it when step 2 switches
+    devices.
+- [x] **Step 2: output device changes.** The aggregate device is built on the default output at
+  start-up. Today, connecting AirPods leaves our copy playing from the old device (the originals are
+  muted), and unplugging the dock silences every other app until JARVIS restarts. Fix: listen for
+  `kAudioHardwarePropertyDefaultOutputDevice` on the system object (on the main queue, where the Core
+  Audio IDs live) and rebuild the aggregate device and callback on the new output; the tap and the
+  ramp stay.
+  - Done in two parts: 2a moved pieces 3 and 4 into `startOutput` / `stopOutput` (no behaviour change);
+    2b added `var output: Output?` and the listener. A failed rebuild leaves `output = nil`: nothing reads
+    the tap, so apps play normally (unducked) until the next change retries.
+  - Tested: Control Center switches, AirPods on/off, unplugging wired headphones, switching while ducked.
+  - Found along the way, not a helper issue: JARVIS's own audio (`sounddevice` / PortAudio) stays on the
+    devices that were the default at start-up, and errors (`PaMacCore … -10863`) if one is unplugged
+    mid-stream. Tracked separately from this plan.
+
+**Steps 3–7 deferred** (2026-11-12): ducking is complete enough for daily use. None of these fix a
+problem seen in practice: the main hang they'd guard against (JARVIS's dead mic) is fixed in `audio.py`,
+and step 7 is mostly covered already. Ctrl-C, a killed helper, a missing helper, and an unplanned
+JARVIS crash (segfault) all left audio back to normal. Pick them up here if ever needed.
+
+- [ ] **Step 3: safety timeout.** In the helper, so it also covers JARVIS hanging: if no `release`
+  arrives within 120 s of the last `duck`, release anyway and log it. A repeated `duck` (follow-ups)
+  restarts the 120 s, so a long conversation isn't cut off; `release` cancels it.
+- [ ] **Step 4: measure the delay** the tap adds: read `kAudioDevicePropertyBufferFrameSize`,
   `kAudioDevicePropertyLatency` and `kAudioDevicePropertySafetyOffset` on the aggregate device (frames
   ÷ 48000 = seconds). Estimate is about 10–25 ms at the default 512-frame buffer. Check lip-sync with a
   video (noticeable from around 45 ms).
-- [ ] Only if the delay is noticeable: lower the aggregate device's buffer size (256 is a common middle
-  ground). Trade-offs: more callbacks per second (still tiny CPU), a tighter deadline per callback,
-  and it may lower the speakers' buffer size for every app (check before and after).
-- [ ] Optional, low priority (matters on the MacBook Air's battery, not on the Mac Studio): stop the
-  device while nothing is playing (`kAudioProcessPropertyIsRunningOutput` listeners) and restart it
-  when something plays. The handover gap is inaudible when there's no sound.
-- [ ] Sample-rate mismatch between the tap and the output device.
-- [ ] Safety timeout: if no `release` arrives within, say, 60 s, release anyway.
-- [ ] Kill the helper mid-duck: audio comes back.
-- [ ] Kill JARVIS mid-duck: the helper exits, audio comes back.
+  - Only if it's noticeable: lower the aggregate device's buffer size (256 is a common middle ground).
+    Trade-offs: more callbacks per second (still tiny CPU), a tighter deadline per callback, and it may
+    lower the speakers' buffer size for every app (check before and after).
+- [ ] **Step 5: one start-up line.** Trim the helper's ~12 start-up log lines to one summary, e.g.
+  `ducker: ready (excluding PID …, -20 dB, 15 ms delay)`, including the delay from step 4.
+- [ ] **Step 6: helper logs into Python's `logging`.** A reader thread in `_ducking.py` turns each
+  `ducker:` stderr line into a `logger.info(...)` call, so it matches JARVIS's log format (today stderr
+  is inherited and prints raw).
+- [ ] **Step 7: kill tests**, last, after all the changes: kill the helper mid-duck (audio comes back);
+  kill JARVIS mid-duck (the helper exits, audio comes back). Already handled by design in milestones 4
+  and 5; this confirms it by ear.
+- Dropped: stopping the device while nothing is playing (power saving). Not needed on the Mac Studio.
+  `isPlaying(_:)` in `main.swift`, kept for it, has been deleted.
 
 ## Milestone 7: ship it
 
 - [x] Release build copied to `bin/ducker` (brought forward to milestone 5, so `_ducking.py` points
   there from the start). Rebuild command under "Commands to remember".
 - [ ] Setup notes: building the helper, the audio-capture permission prompt.
-- [ ] Tick ROADMAP Phase 1, step 8 and commit on `mac-port`.
-
-## Later improvements
-
-- Pipe the helper's stderr into Python's `logging`: a reader thread in `_ducking.py` turns each
-  `ducker:` line into a `logger.info(...)` call, so it matches JARVIS's log format. For now stderr is
-  inherited, so the lines print raw in JARVIS's terminal.
-- Trim the helper's ~12 start-up log lines to one summary line (e.g. `ducker: ready (excluding PID …, -20 dB)`).
+- [ ] One small diagram of the whole finished process (JARVIS → pipe → helper → tap → aggregate
+  device → callback and ramp → output), replacing the big-picture sketch at the top.
+- [x] Tick ROADMAP Phase 1, step 8 and commit on `mac-port`.
 
 ## Commands to remember
 
@@ -227,5 +258,5 @@ All from the repo root.
 
 - Which app does the permission prompt name: the helper, or the terminal / VS Code that launched it?
   (Settles in piece 6.)
-- Does Core Audio give the tap and the output device the same sample rate in practice? The tap
-  reports 48000 Hz; the built-in speakers' rate hasn't been checked yet. (Milestone 6.)
+- ~~Does Core Audio give the tap and the output device the same sample rate in practice?~~ Settled in
+  milestone 6, step 1: the tap stays at 48000 Hz and the aggregate device converts it to the output's rate.

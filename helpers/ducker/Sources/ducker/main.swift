@@ -58,18 +58,9 @@ func processObject(forPID pid: pid_t) -> AudioObjectID? {
     return object
 }
 
-/// Whether the process is currently sending audio to an output device (i.e. playing something).
-/// Unused for now; kept for milestone 6's optional "stop the device while nothing is playing".
-func isPlaying(_ process: AudioObjectID) -> Bool {
-    var address: AudioObjectPropertyAddress = propertyAddress(kAudioProcessPropertyIsRunningOutput)
-    var running: UInt32 = 0
-    var size = UInt32(MemoryLayout<UInt32>.size)
-    return AudioObjectGetPropertyData(process, &address, 0, nil, &size, &running) == 0 && running != 0
-}   // uses AudioObjectGetPropertyData to ask the process this question: kAudioProcessPropertyIsRunningOutput.
-    // all the other parts like running and size is used for C to write the answer back to, since it doesn't understand Swift objects
 
 
-/// The audio format a tap delivers (sample rate, channels, sample type), which the callback in piece 4 must match.
+/// The audio format a tap delivers (sample rate, channels, sample type), which the callback in piece 3 must match.
 func tapFormat(of tap: AudioObjectID) -> AudioStreamBasicDescription? {
     var address = propertyAddress(kAudioTapPropertyFormat)
     var format = AudioStreamBasicDescription()
@@ -95,6 +86,77 @@ func deviceUID(of device: AudioDeviceID) -> String? {
     var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
     guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == 0 else { return nil }
     return value?.takeRetainedValue() as String?  // Core Audio hands over a copy; we take ownership of it
+}
+
+/// The output half of the setup: an aggregate device (tap in, real device out) and our callback running on it.
+/// Rebuilt whenever the output device changes; the tap stays.
+typealias Output = (aggregate: AudioDeviceID, ioProc: AudioDeviceIOProcID)
+
+/// Builds the output half on `device`: creates the aggregate device, registers the callback, starts it.
+/// On failure, undoes whatever it made and returns nil; it never exits, so it's safe to call at runtime.
+func startOutput(on device: AudioDeviceID, tapUUID: UUID, ioBlock: @escaping AudioDeviceIOBlock) -> Output? {
+    guard let uid = deviceUID(of: device) else {
+        log("ducker: couldn't read the UID of output device \(device)")
+        return nil
+    }
+
+    // The aggregate device as a dictionary: the tap as its input, the output device as its output and its clock.
+    let description: [String: Any] = [
+        kAudioAggregateDeviceNameKey: "ducker",             // a label for debugging tools; nothing depends on it
+        kAudioAggregateDeviceUIDKey: UUID().uuidString,     // fresh each time, so neither a crashed run's leftover nor
+                                                            // the device we're replacing can clash with it
+        kAudioAggregateDeviceIsPrivateKey: true,            // invisible to other apps and Sound settings; removed when we exit
+        kAudioAggregateDeviceMainSubDeviceKey: uid,         // whose clock the whole device follows: the output device's
+        kAudioAggregateDeviceSubDeviceListKey: [            // the real devices inside: a list of dictionaries, one per device
+            [kAudioSubDeviceUIDKey: uid],                   // just the output device, by its UID
+        ],
+        kAudioAggregateDeviceTapListKey: [                  // the taps inside: also a list of dictionaries
+            [kAudioSubTapUIDKey: tapUUID.uuidString,        // our tap, by its UUID as text
+             kAudioSubTapDriftCompensationKey: true],       // Core Audio keeps the tap in step with the main clock
+        ],
+        kAudioAggregateDeviceTapAutoStartKey: true,         // the tap starts delivering audio when the device starts
+    ]
+    var aggregate = AudioObjectID(kAudioObjectUnknown)
+    let createStatus = AudioHardwareCreateAggregateDevice(description as CFDictionary, &aggregate)
+    guard createStatus == 0 else {
+        log("ducker: failed to create aggregate device: \(describe(createStatus))")
+        return nil
+    }
+
+    // Register the callback; Core Audio writes a registration ticket into procID, which start/stop/unregister need.
+    var procID: AudioDeviceIOProcID? = nil
+    let procStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate, nil, ioBlock)
+    guard procStatus == 0, let ioProc = procID else {
+        log("ducker: failed to register the callback: \(describe(procStatus))")
+        AudioHardwareDestroyAggregateDevice(aggregate)
+        return nil
+    }
+
+    // Start it. From here its clock ticks and Core Audio calls ioBlock every few milliseconds. The tap auto-starts
+    // with it, and the originals are now muted, so what you hear is our copy.
+    let startStatus = AudioDeviceStart(aggregate, ioProc)
+    guard startStatus == 0 else {
+        log("ducker: failed to start the device: \(describe(startStatus))")
+        AudioDeviceDestroyIOProcID(aggregate, ioProc)
+        AudioHardwareDestroyAggregateDevice(aggregate)
+        return nil
+    }
+
+    log("ducker: output running on device \(device) (\(uid)), aggregate \(aggregate)")
+    return (aggregate, ioProc)
+}
+
+/// Takes the output half down: stop, unregister the callback, destroy the aggregate device. Logs failures and
+/// carries on (after an unplug, Core Audio may complain about stopping a device that's gone).
+func stopOutput(_ output: Output) {
+    let stopStatus = AudioDeviceStop(output.aggregate, output.ioProc)
+    log(stopStatus == 0 ? "ducker: device stopped" : "ducker: stopping device failed: \(describe(stopStatus))")
+    let unregisterStatus = AudioDeviceDestroyIOProcID(output.aggregate, output.ioProc)
+    log(unregisterStatus == 0 ? "ducker: callback unregistered"
+                              : "ducker: unregistering callback failed: \(describe(unregisterStatus))")
+    let destroyStatus = AudioHardwareDestroyAggregateDevice(output.aggregate)
+    log(destroyStatus == 0 ? "ducker: aggregate device destroyed"
+                           : "ducker: destroying aggregate device failed: \(describe(destroyStatus))")
 }
 
 // MARK: - Arguments
@@ -168,7 +230,7 @@ guard status == 0 else {
 
 log("ducker: tap created, tapID: \(tapID)")
 
-// Step 3: ask the tap what its audio looks like. The callback (piece 4) has to handle exactly this format.
+// Step 3: ask the tap what its audio looks like. The callback (piece 3) has to handle exactly this format.
 guard let format: AudioStreamBasicDescription = tapFormat(of: tapID) else {
     log("ducker: couldn't read the tap's format")
     AudioHardwareDestroyProcessTap(tapID)
@@ -187,43 +249,7 @@ guard isFloat, format.mBitsPerChannel == 32, isInterleaved else {
     exit(1)
 }
 
-// MARK: - Piece 3: Aggregate Device
-
-// Step 1: find the output device the system is playing through, and its UID (the aggregate's dictionary needs the UID).
-guard let outputDevice = defaultOutputDevice(), let outputUID = deviceUID(of: outputDevice) else {
-    log("ducker: couldn't find the default output device")
-    AudioHardwareDestroyProcessTap(tapID)
-    exit(1)
-}
-log("ducker: output device \(outputDevice), uid \(outputUID)")
-
-// Step 2: describe the aggregate device as a dictionary: the tap as its input, the output device as its output and its clock.
-let aggregateDescription: [String: Any] = [
-    kAudioAggregateDeviceNameKey: "ducker",             // a label for debugging tools; nothing depends on it
-    kAudioAggregateDeviceUIDKey: UUID().uuidString,     // our own ID; fresh each run so a crashed run's leftover can't clash
-    kAudioAggregateDeviceIsPrivateKey: true,            // invisible to other apps and Sound settings; removed when we exit
-    kAudioAggregateDeviceMainSubDeviceKey: outputUID,   // whose clock the whole device follows: the output device's
-    kAudioAggregateDeviceSubDeviceListKey: [            // the real devices inside: a list of dictionaries, one per device
-        [kAudioSubDeviceUIDKey: outputUID],             // just the output device, by its UID
-    ],
-    kAudioAggregateDeviceTapListKey: [                  // the taps inside: also a list of dictionaries
-        [kAudioSubTapUIDKey: description.uuid.uuidString,   // our tap, by its UUID as text
-         kAudioSubTapDriftCompensationKey: true],           // Core Audio keeps the tap in step with the main clock
-    ],
-    kAudioAggregateDeviceTapAutoStartKey: true,         // the tap starts delivering audio when the device starts (piece 4)
-]
-
-// Step 3: create it. Same pattern as the tap: Core Audio writes the new device's object ID into aggregateID.
-var aggregateID = AudioObjectID(kAudioObjectUnknown)
-let aggregateStatus = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregateID)
-guard aggregateStatus == 0 else {
-    log("ducker: failed to create aggregate device: \(describe(aggregateStatus))")
-    AudioHardwareDestroyProcessTap(tapID)
-    exit(1)
-}
-log("ducker: aggregate device created, aggregateID: \(aggregateID)")
-
-// MARK: - Piece 4: callback + start
+// MARK: - Piece 3: callback
 
 // How far to duck (--duck-db), relative to what's playing: −20 dB = one tenth of the amplitude. 10^(dB/20) turns
 // decibels into the number each sample is multiplied by; the ramp does that conversion.
@@ -233,7 +259,7 @@ log("ducker: duck depth \(duckDB) dB")
 let ducked = Atomic<Bool>(false)        // `let` because it's changed with store(), never replaced
 let ramp = Ramp(sampleRate: Float(format.mSampleRate), duckDB: duckDB)
 
-// Step 1: the callback. Core Audio calls this on its real-time thread every few milliseconds, handing us the
+// The callback. Core Audio calls this on its real-time thread every few milliseconds, handing us the
 // tap's audio (input) and the output device's buffer to fill (output) for the same moment. It writes each input
 // frame to the output multiplied by the ramp's gain. Real-time rules: no printing, no allocating, no locks.
 let ioBlock: AudioDeviceIOBlock = { _, inInputData, _, outOutputData, _ in
@@ -263,42 +289,42 @@ let ioBlock: AudioDeviceIOBlock = { _, inInputData, _, outOutputData, _ in
     }
 }
 
-// Step 2: register the callback with the aggregate device. Core Audio writes a registration ticket into procID;
-// start, stop, and unregister all need it.
-var procID: AudioDeviceIOProcID? = nil
-let procStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil, ioBlock)
-guard procStatus == 0, let ioProc = procID else {
-    log("ducker: failed to register the callback: \(describe(procStatus))")
-    AudioHardwareDestroyAggregateDevice(aggregateID)
-    AudioHardwareDestroyProcessTap(tapID)
-    exit(1)
-}
-log("ducker: callback registered")
+// MARK: - Piece 4: output
 
-// Step 3: start the device. From here its clock ticks and Core Audio calls ioBlock every few milliseconds.
-// The tap auto-starts with it, and the originals are now muted, so what you hear is our copy.
-let startStatus = AudioDeviceStart(aggregateID, ioProc)
-guard startStatus == 0 else {
-    log("ducker: failed to start the device: \(describe(startStatus))")
-    AudioDeviceDestroyIOProcID(aggregateID, ioProc)
-    AudioHardwareDestroyAggregateDevice(aggregateID)
+// Build the output half on whatever the system is playing through right now. Unlike a later rebuild, failing
+// here is fatal: JARVIS reads no `ready`, logs why, and runs without ducking.
+guard let firstDevice = defaultOutputDevice(),
+      let firstOutput = startOutput(on: firstDevice, tapUUID: description.uuid, ioBlock: ioBlock) else {
+    log("ducker: couldn't start output on the default device")
     AudioHardwareDestroyProcessTap(tapID)
     exit(1)
 }
-log("ducker: device started; audio is flowing through the callback")
+var output: Output? = firstOutput              // nil = no output right now: nothing reads the tap, so apps play normally
+var outputDevice: AudioDeviceID = firstDevice  // the device `output` was built on, to ignore repeat notifications
+
+// MARK: - Output changes
+
+// When the system's default output changes (AirPods connect, headphones unplugged…), move the output half to the
+// new device; the tap, the flag and the ramp stay, so a duck carries over. Registered once here; Core Audio calls the
+// block on every change. It runs on the main queue, like the signal handlers, so a rebuild and a tear-down never
+// overlap. It must stay on .main: Swift doesn't check this closure's threading, so that guarantee is ours to keep.
+var defaultOutputAddress = propertyAddress(kAudioHardwarePropertyDefaultOutputDevice)
+let listenStatus = AudioObjectAddPropertyListenerBlock(systemObject, &defaultOutputAddress, .main) { _, _ in
+    guard let newDevice = defaultOutputDevice(), newDevice != outputDevice else { return }  // Core Audio may repeat itself
+    log("ducker: default output changed to device \(newDevice), rebuilding")
+    if let old = output { stopOutput(old) }
+    outputDevice = newDevice
+    output = startOutput(on: newDevice, tapUUID: description.uuid, ioBlock: ioBlock)  // nil on failure: apps play normally
+}
+if listenStatus != 0 {
+    log("ducker: can't watch for output changes (\(describe(listenStatus))); staying on device \(firstDevice)")
+}
 
 // MARK: - Cleanup
 
-/// Stops the aggregate device, unregisters the callback, destroys the aggregate device, and destroys the tap.
-func tearDown(aggregateID: AudioDeviceID, ioProc: AudioDeviceIOProcID, tapID: AudioObjectID) {
-    let stopStatus = AudioDeviceStop(aggregateID, ioProc)
-    log(stopStatus == 0 ? "ducker: device stopped" : "ducker: stopping device failed: \(describe(stopStatus))")
-    let unregisterStatus = AudioDeviceDestroyIOProcID(aggregateID, ioProc)
-    log(unregisterStatus == 0 ? "ducker: callback unregistered"
-                                : "ducker: unregistering callback failed: \(describe(unregisterStatus))")
-    let aggregateDestroyStatus = AudioHardwareDestroyAggregateDevice(aggregateID)
-    log(aggregateDestroyStatus == 0 ? "ducker: aggregate device destroyed"
-                                    : "ducker: destroying aggregate device failed: \(describe(aggregateDestroyStatus))")
+/// Takes down the output half (if there is one right now), then destroys the tap.
+func tearDown(output: Output?, tapID: AudioObjectID) {
+    if let output { stopOutput(output) }   // there may be none, if the last rebuild failed
     let destroyStatus = AudioHardwareDestroyProcessTap(tapID)
     log(destroyStatus == 0 ? "ducker: tap destroyed" : "ducker: destroying tap failed: \(describe(destroyStatus))")
 }
@@ -307,7 +333,7 @@ signal(SIGINT, SIG_IGN)     // ignore ctrl-c for this program; DispatchSourceSig
 let sigint: any DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
 sigint.setEventHandler(handler: {
     log("ducker: ctrl-c received, tearing down")
-    tearDown(aggregateID: aggregateID, ioProc: ioProc, tapID: tapID)
+    tearDown(output: output, tapID: tapID)
     exit(0)
 })
 sigint.resume()              // start listening for ctrl-c; when it happens, tearDown() will run
@@ -316,7 +342,7 @@ signal(SIGTERM, SIG_IGN)    // skip the default quit-at-once on SIGTERM (`kill`)
 let sigterm: any DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler(handler: {
     log("ducker: SIGTERM received, tearing down")
-    tearDown(aggregateID: aggregateID, ioProc: ioProc, tapID: tapID)
+    tearDown(output: output, tapID: tapID)
     exit(0)
 })
 sigterm.resume()             // start listening for SIGTERM; when it happens, tearDown() will run
