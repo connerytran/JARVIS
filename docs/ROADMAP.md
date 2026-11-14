@@ -10,11 +10,11 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
 
 ## Status
 
-**Current phase:** 1 — Mac port
+**Current phase:** 2 — Test mode + baseline
 
 ## Phases
 
-- [ ] **1. Port to Mac.** Get JARVIS working on the Mac the way it worked on Windows — porting only,
+- [x] **1. Port to Mac.** Get JARVIS working on the Mac the way it worked on Windows — porting only,
       no tuning. Resolve Windows-specific code paths (file paths, subprocess calls, Windows-only
       libs) and rebuild the audio ducking as a Swift helper: Core Audio process taps (macOS 14.4+),
       ducks any app's audio including browser helper processes, smooth gain ramps (fast duck, slower
@@ -67,7 +67,7 @@ Stable architecture/conventions live in `CLAUDE.md`, not here.
     Known issue: turning off a Bluetooth speaker while JARVIS is speaking crashes him (segfault in
     native code, cause not pinned down: PortAudio itself or `sd.stop()` on the dead stream). Re-run
     with `PYTHONFAULTHANDLER=1` to see where. Unplugging a wired mic and switching output devices are fine.
-  - [ ] 10. Merge `mac-port` to `main`.
+  - [x] 10. Merge `mac-port` to `main` (PR #21).
 
 - [ ] **2. Test mode + baseline.** Instrumentation, so every later phase can be measured. Do this
       before anything changes the pipeline — it captures the "before" for the Phase 7 comparison.
